@@ -41,7 +41,7 @@
 
       <div class="ob-step" data-step="1" hidden>
         <h1>Wo startet deine Tour?</h1>
-        <p class="lead">Dein Depot oder Zustellstützpunkt. Hier beginnt und endet jede Route.</p>
+        <p class="lead">Dein Depot oder Zustellstützpunkt. Hier beginnt und endet jede Route. Tippe los und wähle einen Vorschlag.</p>
         <label class="field">
           <span>Name</span>
           <input id="ob-depot-name" type="text" placeholder="z. B. Zustellstützpunkt Isenhagen">
@@ -49,12 +49,13 @@
         <label class="field">
           <span>Adresse</span>
           <div class="input-row">
-            <input id="ob-depot-addr" type="text" autocomplete="street-address" placeholder="Straße Nr., PLZ Ort">
+            <input id="ob-depot-addr" type="text" autocomplete="off" placeholder="Straße Nr., PLZ Ort">
             <button class="btn ghost icon" id="ob-locate" title="Aktuellen Standort verwenden" aria-label="Aktuellen Standort verwenden">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>
             </button>
           </div>
         </label>
+        <div class="suggest" id="ob-suggest" hidden></div>
         <div id="ob-depot-result" class="geo-result" hidden></div>
         <div class="row-actions">
           <button class="btn ghost" data-back>Zurück</button>
@@ -109,7 +110,8 @@
             <span class="hint">eine pro Zeile</span>
           </div>
           <div class="composer">
-            <textarea id="addr-input" rows="5" spellcheck="false" placeholder="Hauptstraße 12&#10;Bahnhofstr. 4, 29386 Hankensbüttel&#10;Lindenweg 7a"></textarea>
+            <textarea id="addr-input" rows="5" spellcheck="false" placeholder="Hauptstraße 12, 3 Pakete&#10;Bahnhofstr. 4, 29386 Hankensbüttel&#10;2x Lindenweg 7a"></textarea>
+            <div class="suggest" id="addr-suggest" hidden></div>
             <div class="composer-bar">
               <button class="mic" id="mic-btn" aria-label="Adressen diktieren">
                 <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
@@ -119,7 +121,7 @@
               <button class="btn primary" id="add-btn">Hinzufügen</button>
             </div>
           </div>
-          <p class="tiny">Tipp beim Diktieren: sag <b>„nächste“</b> zwischen zwei Adressen. Ohne Ort wird automatisch im Umkreis deines Depots gesucht.</p>
+          <p class="tiny">Paketzahl einfach dazuschreiben oder dazusagen: <b>„Lindenweg 7, 3 Pakete“</b>. Beim Diktieren trennt <b>„nächste“</b> zwei Adressen.</p>
         </section>
 
         <!-- Stopps -->
@@ -138,27 +140,32 @@
         <!-- Ergebnis -->
         <section id="result" hidden>
           <div class="card next-card" id="next-card"></div>
-
-          <div class="card">
-            <div class="stats" id="stats"></div>
-            <div class="map-wrap mobile-map"><div id="map-mobile" class="map"></div></div>
-            <div class="export" id="export"></div>
-          </div>
+          <div id="map-slot-mobile" class="map-slot"></div>
+          <div class="stats" id="stats"></div>
 
           <div class="card">
             <div class="card-head">
               <h2>Reihenfolge</h2>
-              <button class="link" id="reset-done">Zurücksetzen</button>
+              <button class="btn ghost icon" id="more-btn" aria-label="Mehr">
+                <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></svg>
+              </button>
             </div>
             <ol class="route" id="route-list"></ol>
+            <p class="tiny swipe-hint">Antippen für mehr · nach rechts wischen = erledigt · nach links = löschen</p>
           </div>
         </section>
       </div>
 
       <aside class="col-map">
-        <div class="map-wrap sticky"><div id="map-desktop" class="map"></div>
-          <div class="map-empty" id="map-empty">
-            <p>Deine Route erscheint hier, sobald du optimierst.</p>
+        <div id="map-slot-desktop" class="map-slot sticky">
+          <div class="map-wrap" id="map-wrap">
+            <div id="map" class="map"></div>
+            <button class="map-tap" id="map-tap" aria-label="Karte im Vollbild öffnen"></button>
+            <div class="map-empty" id="map-empty"><p>Deine Route erscheint hier, sobald du optimierst.</p></div>
+            <button class="map-fab close" id="map-close" aria-label="Vollbild schließen" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+            <button class="map-fab full" id="map-full" aria-label="Vollbild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+            <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+            <button class="poi-chip" id="poi-chip" hidden></button>
           </div>
         </div>
       </aside>
@@ -176,10 +183,11 @@
       <label class="field"><span>Depot – Name</span><input id="s-depot-name" type="text"></label>
       <label class="field"><span>Depot – Adresse</span>
         <div class="input-row">
-          <input id="s-depot-addr" type="text">
+          <input id="s-depot-addr" type="text" autocomplete="off">
           <button class="btn ghost" id="s-depot-check">Prüfen</button>
         </div>
       </label>
+      <div class="suggest" id="s-suggest" hidden></div>
       <div id="s-depot-result" class="geo-result" hidden></div>
       <h3 class="mini">Navigations-App</h3>
       <div class="choice-grid compact" id="s-nav"></div>
@@ -196,7 +204,17 @@
       <label class="switch">
         <input type="checkbox" id="s-ai">
         <span class="track"><span class="thumb"></span></span>
-        <span>Intelligente Adress-Erkennung<br><small>Abkürzungen, Zahlwörter und Trennungen beim Diktat automatisch korrigieren</small></span>
+        <span>Intelligente Text-Erkennung<br><small>Abkürzungen, Zahlwörter, Paketzahlen und Trennungen automatisch verstehen</small></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="s-pois">
+        <span class="track"><span class="thumb"></span></span>
+        <span>Packstationen &amp; Postfilialen an der Route<br><small>auf der Karte zeigen, mit Öffnungszeiten</small></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="s-sound">
+        <span class="track"><span class="thumb"></span></span>
+        <span>Töne &amp; Vibration beim Abhaken</span>
       </label>
       <div class="row-actions">
         <button class="btn danger ghost" id="s-reset">App zurücksetzen</button>
@@ -205,10 +223,20 @@
     </div>
   </div>
 
+  <div class="sheet-backdrop" id="sheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-head">
+        <h2 id="sheet-title"></h2>
+        <button class="btn ghost icon" id="sheet-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+
   <!-- Daumen-Leiste (nur Handy/Tablet hochkant) -->
   <nav class="dock" id="dock" hidden></nav>
 
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button id="toast-act" hidden></button></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="js/geo.js"></script>

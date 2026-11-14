@@ -1,4 +1,4 @@
-const CACHE = 'tourplan-v2';
+const CACHE = 'tourplan-v3';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/geo.js', 'js/optimize.js', 'js/speech.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });

@@ -11,3 +11,12 @@ Web-App (PWA) für Zusteller: Adressen tippen, einfügen oder diktieren, beste R
 Dienste ohne API-Schlüssel: Photon/Nominatim (Adresssuche), OSRM (Routing), OpenStreetMap (Karte). Alle Daten bleiben im Browser (localStorage).
 
 Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. Mikrofon, Standort und „Zum Startbildschirm“ brauchen HTTPS (z. B. GitHub Pages).
+
+## Version 2
+
+- Adress-Vorschläge beim Tippen (Depot und Stopps), Paketzahl je Adresse (`Lindenweg 7, 3 Pakete`, `2x Lindenweg 7`)
+- Adresssuche parallel (höchstens 3 Anfragen gleichzeitig), mit Ersatzdienst, wenn Photon nicht antwortet
+- Große Karte, Antippen öffnet Vollbild; Packstationen und Postfilialen an der Route (OpenStreetMap/Overpass) mit Öffnungszeiten
+- Route-Liste: antippen für Aktionen, wischen (rechts erledigt, links löschen), Rückgängig, Ton beim Abhaken
+- Neue, geänderte oder gelöschte Stopps werden in die laufende Tour eingerechnet; erledigte bleiben stehen
+- Google-Maps-Abschnitte und weitere Aktionen im Drei-Punkte-Menü

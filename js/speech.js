@@ -50,12 +50,28 @@
         .replace(/(\d+)\s+([a-hA-H])\b(?!\w)/g, (_, n, l) => n + l.toLowerCase())   // „12 a“ → „12a“
         .replace(/\bstr\.?(?=\s|\d|,|$)/gi, 'Straße')
         .replace(/([a-zäöüß])str\.?(?=\s|\d|,|$)/gi, '$1straße')
-        .replace(/([a-zäöüß])(\d)/gi, '$1 $2');
+        .replace(/([a-wyzäöüß])(\d)/gi, '$1 $2');
     }
     return t.split('\n')
       .map(l => l.trim().replace(/\s{2,}/g, ' ').replace(/^(?:[-•*]|\d{1,2}[.)])\s+/, '').replace(/[.,;]+$/, ''))
       .filter(l => l.length > 2)
       .map(l => l.charAt(0).toUpperCase() + l.slice(1));
+  }
+
+
+  /** „Hauptstraße 5, 3 Pakete“ / „3x Hauptstraße 5“ / „Hauptstraße 5 (3)“ → { query, pk } */
+  function parseLine(line) {
+    let q = line.trim(), pk = null;
+    const U = '(?:x|×|mal|stk\\.?|stück|pakete?n?|päckchen|sendungen?|pkt\\.?|pk\\.?)';
+    q = q.replace(/\b(?:ein|eine|einem)\s+(paket|päckchen|sendung)\b/i, '1 $1');
+    let m;
+    if ((m = q.match(new RegExp('^(\\d{1,3})\\s*' + U + '(?![a-zäöü])[\\s:,-]*', 'i')))) { pk = +m[1]; q = q.slice(m[0].length); }
+    else if ((m = q.match(new RegExp('[\\s,;:–-]+(?:mit\\s+)?(\\d{1,3})\\s*' + U + '$', 'i')))) { pk = +m[1]; q = q.slice(0, m.index); }
+    else if ((m = q.match(/[\s,]+[x×]\s*(\d{1,3})$/i))) { pk = +m[1]; q = q.slice(0, m.index); }
+    else if ((m = q.match(/\s*\((\d{1,3})\)$/))) { pk = +m[1]; q = q.slice(0, m.index); }
+    q = q.replace(/[\s,;:–-]+$/, '').trim();
+    if (q) q = q.charAt(0).toUpperCase() + q.slice(1);
+    return { query: q, pk: pk && pk > 0 ? pk : null };
   }
 
   class Dictation {
@@ -98,5 +114,5 @@
     }
   }
 
-  window.Speech = { Dictation, smartParse, supported: !!SR };
+  window.Speech = { Dictation, smartParse, parseLine, supported: !!SR };
 })();
