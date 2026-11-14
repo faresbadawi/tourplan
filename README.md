@@ -20,3 +20,11 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Route-Liste: antippen für Aktionen, wischen (rechts erledigt, links löschen), Rückgängig, Ton beim Abhaken
 - Neue, geänderte oder gelöschte Stopps werden in die laufende Tour eingerechnet; erledigte bleiben stehen
 - Google-Maps-Abschnitte und weitere Aktionen im Drei-Punkte-Menü
+
+## Version 3
+
+- Straßenverzeichnis des Zustellgebiets (12 km um das Depot, aus OpenStreetMap, auf dem Gerät gespeichert): sofortige Straßenvorschläge, Ort wird ergänzt, Korrekturvorschläge bei Verhörern und Tippfehlern
+- Diktieren per Gedrückthalten; nach dem Loslassen landen die Adressen direkt in der Liste
+- Tour-Überblick mit ausgeschriebenen Angaben statt Kennzahl-Pillen
+- „Tour beenden & speichern“ und Verlauf mit Monatskalender; alte Touren lassen sich neu laden
+- Kopfzeile: Verlauf und Einstellungen oben rechts

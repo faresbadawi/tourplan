@@ -44,6 +44,7 @@
     const want = norm(parsed.street);
     if (want && st === want) s += 9;
     else if (want && st && (st.includes(want) || want.includes(st))) s += 4;
+    else if (want.length > 4) s -= 7;                 // ganz andere Straße: sehr wahrscheinlich falsch
     const places = [p.city, p.town, p.village, p.district, p.locality, p.county].filter(Boolean).map(norm);
     if (parsed.city) {
       const c = norm(parsed.city);
@@ -91,12 +92,12 @@
 
   // Nominatim erlaubt höchstens eine Anfrage pro Sekunde → strikt nacheinander
   let lastNominatim = 0, nomChain = Promise.resolve();
-  function nominatim(q, bias) {
-    const run = nomChain.then(() => nominatimNow(q, bias));
+  function nominatim(q, bias, limit = 1) {
+    const run = nomChain.then(() => nominatimNow(q, bias, limit));
     nomChain = run.catch(() => {});
     return run;
   }
-  async function nominatimNow(q, bias) {
+  async function nominatimNow(q, bias, limit) {
     const wait = 1050 - (Date.now() - lastNominatim);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     lastNominatim = Date.now();
@@ -105,7 +106,7 @@
     u.searchParams.set('format', 'jsonv2');
     u.searchParams.set('addressdetails', '1');
     u.searchParams.set('countrycodes', 'de');
-    u.searchParams.set('limit', '1');
+    u.searchParams.set('limit', String(limit));
     if (bias) {
       const d = 0.35;
       u.searchParams.set('viewbox', [bias.lon - d, bias.lat + d, bias.lon + d, bias.lat - d].join(','));
@@ -113,15 +114,31 @@
     const r = await fetch(u, { headers: { 'Accept-Language': 'de' }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) throw new Error('Nominatim ' + r.status);
     const j = await r.json();
-    if (!j.length) return null;
-    const a = j[0].address || {};
-    const city = a.city || a.town || a.village || a.municipality || '';
-    const line1 = [a.road, a.house_number].filter(Boolean).join(' ');
-    return {
-      lat: +j[0].lat, lon: +j[0].lon,
-      label: [line1, [a.postcode, city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || j[0].display_name,
-      city, postcode: a.postcode || '', approx: !a.house_number
-    };
+    const list = j.map(x => {
+      const a = x.address || {};
+      const city = a.city || a.town || a.village || a.municipality || a.hamlet || '';
+      const line1 = [a.road, a.house_number].filter(Boolean).join(' ');
+      return {
+        lat: +x.lat, lon: +x.lon,
+        label: [line1, [a.postcode, city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || x.display_name,
+        city, postcode: a.postcode || '', approx: !a.house_number
+      };
+    });
+    return limit === 1 ? (list[0] || null) : list;
+  }
+
+  /** Mehrere Kandidaten für eine ausdrücklich gestartete Suche (Knopf „Prüfen“). */
+  async function candidates(query, depot) {
+    let list = [];
+    try { list = (await suggest(query, depot)).filter(x => x.exact); } catch (_) {}
+    if (!list.length) {
+      try {
+        const seen = new Set();
+        list = (await nominatim(query, null, 5)).filter(x => !seen.has(x.label) && seen.add(x.label))
+          .map(x => Object.assign(x, { title: x.label.split(',')[0], sub: x.label.split(',').slice(1).join(',').trim(), exact: true, km: null }));
+      } catch (_) {}
+    }
+    return list;
   }
 
   /** Adresse → {lat, lon, label, city, postcode, approx} oder null */
@@ -283,6 +300,127 @@
     return out.sort((a, b) => a.at - b.at);
   }
 
+
+  /* ---------- Straßenverzeichnis des Zustellgebiets ----------
+     Einmal aus OpenStreetMap geladen und auf dem Gerät gespeichert. Liefert Vorschläge sofort
+     und ohne Netz und erkennt Verhörer/Tippfehler („Ortsfelder“ → „Ortfelder“). */
+  const STREETS_KEY = 'tp.streets.v1', STREET_RADIUS = 12000;
+  let streets = null;
+  try { streets = JSON.parse(localStorage.getItem(STREETS_KEY) || 'null'); } catch (_) {}
+  if (streets) streets.list.forEach(x => { x.k = norm(x.n); });
+
+  const streetCount = () => streets ? { streets: streets.list.length, places: new Set(streets.list.map(x => x.p)).size, ts: streets.ts } : null;
+
+  async function loadStreets(depot, force) {
+    if (!depot) return null;
+    if (!force && streets && haversine(depot.lat, depot.lon, streets.lat, streets.lon) < 1500 && Date.now() - streets.ts < 30 * 864e5) return streetCount();
+    const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
+    const q = `[out:csv(::type,name,::lat,::lon;false;"|")][timeout:40];(way["highway"]["name"](around:${STREET_RADIUS},${la},${lo});node["place"~"^(city|town|village|hamlet|suburb)$"](around:${STREET_RADIUS + 3000},${la},${lo}););out center qt;`;
+    let text = null;
+    for (const url of [...OVERPASS, 'https://overpass.private.coffee/api/interpreter']) {
+      try {
+        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(20000) });
+        if (!r.ok) continue;
+        const t = await r.text();
+        if (/^(way|node)\|/m.test(t)) { text = t; break; }
+      } catch (_) {}
+    }
+    if (!text) throw new Error('Straßenverzeichnis nicht erreichbar');
+    const places = [], ways = [];
+    text.split('\n').forEach(line => {
+      const [type, name, lat, lon] = line.split('|');
+      if (!name || !lat) return;
+      (type === 'node' ? places : ways).push({ n: name.trim(), lat: +lat, lon: +lon });
+    });
+    const byKey = new Map();
+    for (const w of ways) {
+      let p = '', bd = Infinity;
+      for (const pl of places) { const d = haversine(w.lat, w.lon, pl.lat, pl.lon); if (d < bd) { bd = d; p = pl.n; } }
+      const key = norm(w.n) + '|' + p;
+      const e = byKey.get(key);
+      if (e) { e.lat += w.lat; e.lon += w.lon; e.c++; } else byKey.set(key, { n: w.n, p, lat: w.lat, lon: w.lon, c: 1 });
+    }
+    const list = [...byKey.values()].map(e => ({ n: e.n, p: e.p, lat: +(e.lat / e.c).toFixed(5), lon: +(e.lon / e.c).toFixed(5) }));
+    streets = { lat: depot.lat, lon: depot.lon, ts: Date.now(), list };
+    try { localStorage.setItem(STREETS_KEY, JSON.stringify(streets)); } catch (_) {}
+    streets.list.forEach(x => { x.k = norm(x.n); });
+    return streetCount();
+  }
+
+  // Editierdistanz mit Abbruch, sobald sie größer als max wird
+  function lev(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let rowMin = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (cur[j] < rowMin) rowMin = cur[j];
+      }
+      if (rowMin > max) return max + 1;
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  const withNumber = (x, hn) => [[x.n, hn].filter(Boolean).join(' '), x.p].filter(Boolean).join(', ');
+  const placeHit = (x, city) => { const c = norm(city); return !!c && (norm(x.p) === c || norm(x.p).includes(c) || c.includes(norm(x.p))); };
+
+  /** Vorschläge aus dem Verzeichnis: Anfang passt, enthält, oder fast gleich geschrieben. */
+  function streetSuggest(text, depot, limit = 6) {
+    if (!streets) return [];
+    const parsed = parseQuery(text), want = norm(parsed.street);
+    if (want.length < 2) return [];
+    const out = [];
+    for (const x of streets.list) {
+      let rank = -1;
+      if (x.k.startsWith(want)) rank = 0;
+      else if (want.length >= 4 && x.k.includes(want)) rank = 1;
+      else if (want.length >= 5) {
+        const d = Math.min(lev(want, x.k.slice(0, want.length), 1), lev(want, x.k.slice(0, want.length - 1), 1), lev(want, x.k.slice(0, want.length + 1), 1));
+        if (d <= 1) rank = 2;
+      }
+      if (rank < 0) continue;
+      if (parsed.city && placeHit(x, parsed.city)) rank -= 0.5;
+      const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0;
+      out.push({ rank, km, x });
+    }
+    out.sort((a, b) => a.rank - b.rank || a.km - b.km);
+    return out.slice(0, limit).map(({ x, km, rank }) => ({
+      street: x.n, place: x.p, lat: x.lat, lon: x.lon, title: [x.n, parsed.housenumber].filter(Boolean).join(' '),
+      sub: x.p + (rank >= 2 ? ' · ähnlich geschrieben' : ''), label: withNumber(x, parsed.housenumber),
+      exact: false, local: true, hasNumber: !!parsed.housenumber, km,
+    }));
+  }
+
+  /** Straße genau im Verzeichnis? → Eintrag (bei mehreren Orten: genannter Ort, sonst der nächste am Depot). */
+  function streetLookup(query, depot) {
+    if (!streets) return null;
+    const parsed = parseQuery(query), want = norm(parsed.street);
+    const hits = streets.list.filter(x => x.k === want);
+    if (!hits.length) return null;
+    const inPlace = parsed.city ? hits.filter(x => placeHit(x, parsed.city)) : [];
+    if (parsed.city && !inPlace.length) return null;            // Ort genannt, aber dort nicht im Verzeichnis
+    const pool = inPlace.length ? inPlace : hits;
+    const best = pool.slice().sort((a, b) => haversine(depot.lat, depot.lon, a.lat, a.lon) - haversine(depot.lat, depot.lon, b.lat, b.lon))[0];
+    return { n: best.n, p: best.p, lat: best.lat, lon: best.lon, sure: inPlace.length > 0 || hits.length === 1, label: withNumber(best, parsed.housenumber) };
+  }
+
+  /** Straße unbekannt? → ähnlich geschriebene Straßen als Korrekturvorschlag (fertige Adresszeilen). */
+  function streetFix(query, depot) {
+    if (!streets) return [];
+    const parsed = parseQuery(query), want = norm(parsed.street);
+    if (want.length < 5 || streets.list.some(x => x.k === want)) return [];
+    const max = want.length >= 12 ? 3 : 2, out = [];
+    for (const x of streets.list) {
+      const d = lev(want, x.k, max);
+      if (d <= max) out.push({ d: d - (parsed.city && placeHit(x, parsed.city) ? 0.5 : 0), km: haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000, x });
+    }
+    out.sort((a, b) => a.d - b.d || a.km - b.km);
+    const seen = new Set();
+    return out.map(o => withNumber(o.x, parsed.housenumber)).filter(l => !seen.has(l) && seen.add(l)).slice(0, 3);
+  }
+  const hasPlaceIn = q => /,/.test(q) || /\b\d{5}\b/.test(q);
+
   async function reverse(lat, lon) {
     const r = await fetch(`${PHOTON}/reverse?lat=${lat}&lon=${lon}&lang=de`);
     const j = await r.json();
@@ -352,5 +490,5 @@
     }
   }
 
-  window.Geo = { geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints };
+  window.Geo = { geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, hasPlaceIn, parseQuery, norm };
 })();

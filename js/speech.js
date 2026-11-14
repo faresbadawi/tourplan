@@ -75,9 +75,9 @@
   }
 
   class Dictation {
-    constructor({ onFinal, onInterim, onState, onError }) {
+    constructor({ onFinal, onInterim, onState, onError, onEnd }) {
       this.supported = !!SR;
-      this.cb = { onFinal, onInterim, onState, onError };
+      this.cb = { onFinal, onInterim, onState, onError, onEnd };
       this.active = false;
     }
     toggle() { this.active ? this.stop() : this.start(); }
@@ -101,6 +101,7 @@
         // Safari/Chrome beenden gern nach Pausen – weiterlauschen, solange aktiv
         if (this.active) { try { r.start(); return; } catch (_) {} }
         this.active = false; this.cb.onState(false); this.cb.onInterim('');
+        if (this.cb.onEnd) this.cb.onEnd();
       };
       this.rec = r;
       this.active = true;
