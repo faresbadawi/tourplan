@@ -360,11 +360,11 @@
     if (!depot) return null;
     if (!force && streets && haversine(depot.lat, depot.lon, streets.lat, streets.lon) < 1500 && Date.now() - streets.ts < 30 * 864e5) return streetCount();
     const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
-    const q = `[out:csv(::type,name,::lat,::lon;false;"|")][timeout:40];(way["highway"]["name"](around:${STREET_RADIUS},${la},${lo});node["place"~"^(city|town|village|hamlet|suburb)$"](around:${STREET_RADIUS + 3000},${la},${lo}););out center qt;`;
+    const q = `[out:csv(::type,name,::lat,::lon;false;"|")][timeout:90];(way["highway"]["name"](around:${STREET_RADIUS},${la},${lo});node["place"~"^(city|town|village|hamlet|suburb)$"](around:${STREET_RADIUS + 3000},${la},${lo}););out center qt;`;
     let text = null;
     for (const url of [...OVERPASS, 'https://overpass.private.coffee/api/interpreter']) {
       try {
-        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(20000) });
+        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(90000) });
         if (!r.ok) continue;
         const t = await r.text();
         if (/^(way|node)\|/m.test(t)) { text = t; break; }
@@ -484,6 +484,64 @@
     const seen = new Set();
     return out.map(o => withNumber(o.x, parsed.housenumber)).filter(l => !seen.has(l) && seen.add(l)).slice(0, 3);
   }
+  /* Kölner Phonetik: gleich klingende Wörter bekommen denselben Code („Ortsfelder“ ≈ „Ortfelder“, „Mayer“ ≈ „Meier“) */
+  function koeln(w) {
+    w = w.toLowerCase().replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 's').replace(/[^a-z]/g, '');
+    let out = '';
+    for (let i = 0; i < w.length; i++) {
+      const c = w[i], p = w[i - 1] || '', n = w[i + 1] || '';
+      let d;
+      if ('aeijouy'.includes(c)) d = '0';
+      else if (c === 'h') d = '';
+      else if (c === 'b') d = '1';
+      else if (c === 'p') d = n === 'h' ? '3' : '1';
+      else if (c === 'd' || c === 't') d = 'csz'.includes(n) ? '8' : '2';
+      else if ('fvw'.includes(c)) d = '3';
+      else if ('gkq'.includes(c)) d = '4';
+      else if (c === 'c') d = i === 0 ? ('ahkloqrux'.includes(n) ? '4' : '8') : ('sz'.includes(p) || !'ahkoqux'.includes(n) ? '8' : '4');
+      else if (c === 'x') d = 'ckq'.includes(p) ? '8' : '48';
+      else if (c === 'l') d = '5';
+      else if (c === 'm' || c === 'n') d = '6';
+      else if (c === 'r') d = '7';
+      else if (c === 's' || c === 'z') d = '8';
+      else d = '';
+      out += d;
+    }
+    out = out.replace(/(.)\1+/g, '$1');
+    return out[0] + out.slice(1).replace(/0/g, '');
+  }
+  // Straßen-Suffixe gesprochen oft anders („straße“/„str“/„weg“) – für den Klangvergleich nur der Namensteil
+  const SUFFIX = /(strasse|weg|allee|platz|ring|gasse|damm|chaussee|pfad|stieg|steig|hof|feld|berg|kamp|winkel|graben|ufer|markt|wall|siedlung)$/;
+  const stem = k => k.replace(SUFFIX, '') || k;
+  function phon(x) { if (!x.ph) { x.ph = koeln(x.k); x.ps = koeln(stem(x.k)); } return x; }
+
+  /** Ähnlichste Straßen zu einer (vielleicht falsch erkannten) Eingabe – nach Schreibweise und Klang, eigenes Gebiet zuerst. */
+  function similarStreets(text, depot, limit = 6) {
+    if (!streets) return [];
+    const parsed = parseQuery(text), want = norm(parsed.street);
+    if (want.length < 3) return [];
+    const wph = koeln(want), wps = koeln(stem(want)), max = Math.max(3, Math.round(want.length * .45));
+    const seen = new Map();
+    for (const x of streets.list) {
+      phon(x);
+      const d = lev(want, x.k, max);
+      let sc = d <= max ? d / Math.max(want.length, x.k.length) * 10 : 99;
+      if (x.ph === wph) sc = Math.min(sc, 1.2);
+      else if (x.ps === wps && wps.length >= 2) sc = Math.min(sc, 2.2);
+      else { const pd = lev(wph, x.ph, 2); if (pd <= 1) sc = Math.min(sc, 2.8 + pd); }
+      if (x.k.startsWith(want.slice(0, 4))) sc -= .6;
+      if (sc > 6) continue;
+      if (!inArea(x)) sc += 1.5;
+      if (parsed.city && placeHit(x, parsed.city)) sc -= 1;
+      const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0;
+      sc += km / 40;
+      const key = x.k + '|' + x.p, prev = seen.get(key);
+      if (!prev || prev.sc > sc) seen.set(key, { sc, x, km });
+    }
+    return [...seen.values()].sort((a, b) => a.sc - b.sc).slice(0, limit).map(({ x, km }) => ({
+      street: x.n, place: x.p, line: withNumber(x, parsed.housenumber), outside: !inArea(x), km, exact: x.k === want }));
+  }
+
   /** Verhörer, der sich eindeutig auflösen lässt (genau eine fast gleich geschriebene Straße im Zustellgebiet) → korrigierte Zeile. */
   function streetAuto(query) {
     if (!streets || !area.size) return null;
@@ -496,8 +554,71 @@
       const d = lev(want, x.k, max);
       if (d < bd) { bd = d; best = [x]; } else if (d === bd && d <= max && !best.some(b => b.k === x.k)) best.push(x);
     }
-    return bd <= max && best.length === 1 ? withNumber(best[0], parsed.housenumber) : null;
+    if (bd <= max && best.length === 1) return withNumber(best[0], parsed.housenumber);
+    // sonst: genau eine gleich klingende Straße im Gebiet
+    const wph = koeln(want);
+    const same = streets.list.filter(x => inArea(x) && phon(x).ph === wph && lev(want, x.k, 4) <= 4);
+    const names = new Set(same.map(x => x.k));
+    return names.size === 1 ? withNumber(same[0], parsed.housenumber) : null;
   }
+  /* ---------- Hausnummern des Gebiets (offline) ----------
+     Alle Adressen mit Hausnummer aus OpenStreetMap, auf dem Gerät gespeichert → exakte Treffer ohne Netz. */
+  const ADDR_KEY = 'tp.addr.v1';
+  let addr = null;
+  try { addr = JSON.parse(localStorage.getItem(ADDR_KEY) || 'null'); } catch (_) {}
+  const addrCount = () => addr ? { n: addr.n, ts: addr.ts } : null;
+  async function loadAddresses(depot, force) {
+    if (!depot) return null;
+    if (!force && addr && haversine(depot.lat, depot.lon, addr.lat, addr.lon) < 1500 && Date.now() - addr.ts < 30 * 864e5) return addrCount();
+    const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
+    const q = `[out:csv("addr:street","addr:housenumber",::lat,::lon,"addr:city","addr:postcode";false;"|")][timeout:90];nwr["addr:housenumber"]["addr:street"](around:${STREET_RADIUS},${la},${lo});out center qt;`;
+    let text = null;
+    for (const url of [...OVERPASS, 'https://overpass.private.coffee/api/interpreter']) {
+      try {
+        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(120000) });
+        if (!r.ok) continue;
+        const t = await r.text();
+        if (/\|\d/.test(t)) { text = t; break; }
+      } catch (_) {}
+    }
+    if (!text) throw new Error('Adressen nicht erreichbar');
+    const cities = [], ci = new Map(), map = {};
+    let n = 0;
+    text.split('\n').forEach(line => {
+      const [st, hn, lat, lon, city, pc] = line.split('|');
+      if (!st || !hn || !lat) return;
+      const c = (pc ? pc + ' ' : '') + (city || '');
+      if (!ci.has(c)) { ci.set(c, cities.length); cities.push(c); }
+      const k = norm(st);
+      (map[k] = map[k] || { n: st, a: [] }).a.push([hn.toLowerCase().replace(/\s/g, ''), +(+lat).toFixed(5), +(+lon).toFixed(5), ci.get(c)]);
+      n++;
+    });
+    addr = { lat: depot.lat, lon: depot.lon, ts: Date.now(), n, cities, map };
+    try { localStorage.setItem(ADDR_KEY, JSON.stringify(addr)); } catch (_) { try { localStorage.removeItem(ADDR_KEY); } catch (__) {} }
+    return addrCount();
+  }
+  /** „Lindenweg 3, Hankensbüttel“ → exakter Punkt aus dem Offline-Verzeichnis oder null */
+  function addrLookup(query, depot) {
+    if (!addr) return null;
+    const parsed = parseQuery(query), e = addr.map[norm(parsed.street)];
+    if (!e || !parsed.housenumber) return null;
+    let hits = e.a.filter(a => a[0] === parsed.housenumber);
+    if (!hits.length) return null;
+    const placeOf = a => { const c = addr.cities[a[3]] || ''; return c.replace(/^\d{5}\s*/, '') || placeAt(a[1], a[2]); };
+    if (parsed.city) {
+      const c = norm(parsed.city), m = hits.filter(a => { const p = norm(placeOf(a)), sp = norm(placeAt(a[1], a[2])); return p.includes(c) || c.includes(p) || sp === c; });
+      if (!m.length) return null;
+      hits = m;
+    } else if (area.size) {
+      const inside = hits.filter(a => !isOutside(a[1], a[2]));
+      if (inside.length) hits = inside;
+    }
+    const best = hits.slice().sort((a, b) => haversine(depot.lat, depot.lon, a[1], a[2]) - haversine(depot.lat, depot.lon, b[1], b[2]))[0];
+    const pc = (addr.cities[best[3]] || '').match(/^\d{5}/);
+    const place = placeAt(best[1], best[2]) || placeOf(best);
+    return { lat: best[1], lon: best[2], label: `${e.n} ${parsed.housenumber}, ${pc ? pc[0] + ' ' : ''}${place}`, approx: false, city: place, postcode: pc ? pc[0] : '' };
+  }
+
   const hasPlaceIn = q => /,/.test(q) || /\b\d{5}\b/.test(q);
 
   async function reverse(lat, lon) {
@@ -569,5 +690,5 @@
     }
   }
 
-  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetAuto, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
+  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetAuto, similarStreets, loadAddresses, addrCount, addrLookup, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
 })();

@@ -5,7 +5,7 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   /* ---------- Zustand ---------- */
-  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, mapStyle: 'de', area: null, tomtom: '' };
+  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, mapStyle: 'de', area: null, tomtom: '', meIcon: 'arrow' };
   const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
@@ -296,7 +296,7 @@
       this.layers = L.layerGroup().addTo(this.map);
       this.poiLayer = L.layerGroup().addTo(this.map);
       this.setTiles();
-      this.map.on('dragstart zoomstart', e => { if (e.type === 'dragstart' || e.originalEvent) this.stopPlay(); });
+      this.map.on('dragstart', () => { this.stopPlay(); if (Me.follow) { Me.follow = false; $('#map-locate').classList.remove('on'); } });
       this.map.on('locationfound', e => {
         if (this.me) this.me.remove();
         this.me = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#0A84D6', fillOpacity: 1 }).addTo(this.map);
@@ -349,7 +349,6 @@
       }
       this.pin(depot, HOME_ICON, 'depot').bindTooltip(esc(depot.name)).addTo(this.layers);
       this.renderPois();
-      $('#map-play').hidden = !route;
       // nur neu einpassen, wenn sich die Punkte geändert haben – nicht bei jedem Haken
       const key = (route ? route.order.join() : stops.filter(s => s.status === 'ok').map(s => s.id).join()) + '|' + depot.lat;
       if (key === this.lastFit && !refit) return;
@@ -382,7 +381,7 @@
       if (!route || !this.map) return;
       if (this.playing) return this.stopPlay();
       const run = ++this.playToken || (this.playToken = 1);
-      this.playing = run; $('#map-play').classList.add('on');
+      this.playing = run; document.querySelector('#map-play')?.classList.add('on');
       const ids = route.order.filter(id => !route.done[id]).slice(0, max);
       const wait = ms => new Promise(r => setTimeout(r, ms));
       for (const id of ids) {
@@ -396,7 +395,7 @@
       if (this.playing !== run) return;
       this.stopPlay(); this.lastFit = ''; this.render(true);
     },
-    stopPlay() { this.playing = 0; $('#map-play').classList.remove('on'); },
+    stopPlay() { this.playing = 0; document.querySelector('#map-play')?.classList.remove('on'); },
     pinEls: {},
     setFull(on, viaHistory) {
       if (on === this.full) return;
@@ -408,7 +407,14 @@
       if (on) history.pushState({ mapFull: true }, '');
       else if (!viaHistory && history.state && history.state.mapFull) history.back();
       this.syncTouch();
-      setTimeout(() => { if (this.map) { this.map.invalidateSize(); this.lastFit = ''; this.render(); } }, 60);
+      setTimeout(() => {
+        if (!this.map) return;
+        this.map.invalidateSize(); this.lastFit = ''; this.render();
+        // Vollbild = Fahrmodus: direkt zum nächsten Stopp; zurück = wieder die ganze Tour
+        const cur = currentIndex();
+        if (on && route && cur !== -1) setTimeout(() => this.flyTo(stopById(route.order[cur]), 16, 1), 350);
+        if (on) Me.auto();
+      }, 60);
     },
     syncTouch() {                    // eingebettet auf dem Handy: Antippen öffnet Vollbild, Seite bleibt scrollbar
       const inline = !this.full && !wide();
@@ -421,9 +427,90 @@
   $('#map-tap').onclick = () => Map_.setFull(true);
   $('#map-full').onclick = () => Map_.setFull(true);
   $('#map-close').onclick = () => Map_.setFull(false);
-  $('#map-play').onclick = () => Map_.play();
-  $('#map-layers').onclick = () => Map_.cycleStyle();
-  $('#map-locate').onclick = () => { if (Map_.map) Map_.map.locate({ setView: true, maxZoom: 15, enableHighAccuracy: true }); };
+  $('#map-layers').onclick = openLayerSheet;
+  $('#map-locate').onclick = () => Me.start(true);
+
+  /* ---------- Eigener Standort mit Blickrichtung (Pfeil, Lieferwagen oder Punkt) ---------- */
+  const ME_ICONS = {
+    arrow: { name: 'Pfeil', svg: '<svg viewBox="0 0 44 44"><path d="M22 5 34 35 22 28.5 10 35Z" fill="#1A73E8" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>' },
+    van: { name: 'Gelber Lieferwagen', svg: '<svg viewBox="0 0 44 44"><rect x="10.5" y="13" width="3.5" height="4.5" rx="1.2" fill="#6b5500"/><rect x="30" y="13" width="3.5" height="4.5" rx="1.2" fill="#6b5500"/><rect x="13" y="4.5" width="18" height="35" rx="5.5" fill="#FFCC00" stroke="#6b5500" stroke-width="1.6"/><path d="M15.2 11.8Q22 8.2 28.8 11.8L27.8 16.4Q22 14.6 16.2 16.4Z" fill="#26282B"/><rect x="15.5" y="19" width="13" height="17.5" rx="2" fill="#FFD84D"/><rect x="13.8" y="25" width="16.4" height="2.6" fill="#D40511"/></svg>' },
+    dot: { name: 'Punkt', svg: '<svg viewBox="0 0 44 44"><path class="cone" d="M22 22 13 4h18Z" fill="#1A73E8" opacity=".28"/><circle cx="22" cy="22" r="8.5" fill="#1A73E8" stroke="#fff" stroke-width="3.5"/></svg>' },
+  };
+  const Me = {
+    watchId: null, marker: null, acc: null, pos: null, heading: null, follow: false, compassOn: false, first: true,
+    html() { const k = ME_ICONS[settings.meIcon] ? settings.meIcon : 'arrow'; return `<div class="me me-${k}${this.heading == null ? ' no-heading' : ''}"><div class="me-rot">${ME_ICONS[k].svg}</div></div>`; },
+    redraw() {
+      if (!this.marker) return;
+      this.marker.setIcon(L.divIcon({ className: '', html: this.html(), iconSize: [44, 44], iconAnchor: [22, 22] }));
+      this.rotate();
+    },
+    rotate() {
+      const el = this.marker && this.marker.getElement(); if (!el) return;
+      const r = el.querySelector('.me-rot'); if (r) r.style.transform = `rotate(${this.heading || 0}deg)`;
+      el.firstElementChild.classList.toggle('no-heading', this.heading == null);
+    },
+    async compass(fromClick) {
+      if (this.compassOn) return;
+      try {
+        if (fromClick && window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          if (await DeviceOrientationEvent.requestPermission() !== 'granted') return;
+        }
+      } catch (_) { return; }
+      this.compassOn = true;
+      const onOri = e => {
+        let h = null;
+        if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;          // iPhone/iPad
+        else if (e.absolute && typeof e.alpha === 'number') h = 360 - e.alpha;                // Android
+        if (h == null || (this.pos && this.pos.speed > 2.5)) return;                         // in Fahrt zählt die Fahrtrichtung
+        h = (h + ((screen.orientation && screen.orientation.angle) || 0)) % 360;
+        this.heading = h; this.rotate();
+      };
+      addEventListener('ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', onOri, true);
+    },
+    start(fromClick) {
+      const m = Map_.ensure(); if (!m) return;
+      if (fromClick) { this.compass(true); this.follow = true; if (this.pos) m.flyTo([this.pos.lat, this.pos.lon], Math.max(m.getZoom(), 16), { duration: .6 }); }
+      $('#map-locate').classList.toggle('on', this.follow);
+      if (this.watchId != null) return;
+      if (!navigator.geolocation) return toast('Standort wird hier nicht unterstützt');
+      this.watchId = navigator.geolocation.watchPosition(p => {
+        const c = p.coords;
+        this.pos = { lat: c.latitude, lon: c.longitude, speed: c.speed || 0 };
+        if (c.heading != null && !isNaN(c.heading) && (c.speed || 0) > 2.5) { this.heading = c.heading; }
+        if (!this.marker) {
+          this.marker = L.marker([c.latitude, c.longitude], { zIndexOffset: 2000, interactive: false, icon: L.divIcon({ className: '', html: this.html(), iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(m);
+          this.acc = L.circle([c.latitude, c.longitude], { radius: c.accuracy, color: '#1A73E8', weight: 1, opacity: .3, fillOpacity: .08, interactive: false }).addTo(m);
+        } else { this.marker.setLatLng([c.latitude, c.longitude]); this.acc.setLatLng([c.latitude, c.longitude]).setRadius(c.accuracy); }
+        this.rotate();
+        if (this.follow) {
+          if (this.first) { m.setView([c.latitude, c.longitude], Math.max(m.getZoom(), 16)); this.first = false; }
+          else m.panTo([c.latitude, c.longitude], { animate: true, duration: .5 });
+        }
+      }, err => {
+        this.watchId = null;
+        if (fromClick) toast(err.code === 1 ? 'Standort nicht freigegeben – in den Browser-Einstellungen erlauben' : 'Standort gerade nicht verfügbar', 3500);
+      }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    },
+    auto() {                     // Standort schon erlaubt → im Vollbild gleich anzeigen (ohne Nachfrage)
+      if (this.watchId != null || !navigator.permissions) return;
+      navigator.permissions.query({ name: 'geolocation' }).then(p => { if (p.state === 'granted') { this.start(false); this.compass(false); } }).catch(() => {});
+    },
+  };
+
+  /* ---------- Kartenstil und Standort-Symbol selbst wählen ---------- */
+  const STYLE_INFO = { de: 'deutsche Beschriftung, gut lesbar', hot: 'ruhig, Häuser und Wege deutlich', osm: 'die klassische OpenStreetMap', sat: 'Luftbild – Einfahrten und Höfe erkennen', tomtom: 'mit deinem TomTom-Schlüssel' };
+  function openLayerSheet() {
+    const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
+    openSheet('Karte', `<div class="menu">${keys.map(k => `<button class="menu-item${mapStyle() === k ? ' now' : ''}" data-style="${k}">${ICON.route}<span><b>${MAP_STYLES[k].name}</b><small>${STYLE_INFO[k]}</small></span>${mapStyle() === k ? ICON.check : ''}</button>`).join('')}</div>
+      <h3 class="mini">Mein Standort als</h3>
+      <div class="me-choices">${Object.entries(ME_ICONS).map(([k, v]) => `<button data-meicon="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}"><span class="me-prev">${v.svg}</span>${v.name}</button>`).join('')}</div>`);
+  }
+  $('#sheet-body').addEventListener('click', e => {
+    const st = e.target.closest('[data-style]');
+    if (st) { settings.mapStyle = st.dataset.style; persist(); Map_.setTiles(); closeSheet(); return; }
+    const mi = e.target.closest('[data-meicon]');
+    if (mi) { settings.meIcon = mi.dataset.meicon; persist(); Me.redraw(); document.querySelectorAll('[data-meicon]').forEach(b => b.setAttribute('aria-pressed', b === mi)); }
+  });
   addEventListener('popstate', () => { if (Map_.full) Map_.setFull(false, true); });
   let lastWide = wide();
   addEventListener('resize', () => {
@@ -498,6 +585,8 @@
       und liefert Korrekturvorschläge bei Verhörern. → { r, alts } */
   async function locate(query) {
     const depot = settings.depot;
+    const off = Geo.addrLookup(query, depot);            // Hausnummer im heruntergeladenen Gebiet → sofort und exakt
+    if (off) return { r: off, alts: [] };
     let r = null;
     try { r = await Geo.geocode(query, depot); } catch (_) {}
     const st = Geo.streetLookup(query, depot);
@@ -509,7 +598,8 @@
       if (bare !== query) { try { r2 = await Geo.geocode(bare, { lat: st.lat, lon: st.lon, city: st.p }); } catch (_) {} }
       r = r2 && near(r2) ? r2 : { lat: st.lat, lon: st.lon, label: st.label, approx: true };   // notfalls Straßenmitte
     }
-    const alts = Geo.streetFix(query, depot);
+    let alts = Geo.streetFix(query, depot);
+    if (!alts.length && !st && Geo.streetCount()) alts = Geo.similarStreets(query, depot, 4).filter(x => !x.exact).map(x => x.line);   // auch weiter weg Klingendes anbieten
     if (alts.length) {
       const want = Geo.norm(Geo.parseQuery(query).street), got = r ? Geo.norm(r.label.split(',')[0].replace(/\s*\d+\s?[a-z]?$/i, '')) : '';
       if (!r || got !== want) return { r: null, alts };               // unbekannte Straße: lieber nachfragen als raten
@@ -574,10 +664,20 @@
   let editingId = null, openId = null;
 
   /** Bearbeitungszeile mit Vorschlägen und Paketzähler (für beide Listen) */
+  /** Liste der ähnlichsten Straßen im Gebiet – für falsch erkannte Namen */
+  function similarHtml(s) {
+    const base = s.fixedFrom || s.query;
+    const list = Geo.similarStreets(base, settings.depot, 6);
+    if (!list.length) return '';
+    const cur = Geo.norm(Geo.parseQuery(s.query).street);
+    return `<div class="similar"><small>Ähnliche Straßen${settings.area && settings.area.length ? ' in deinem Gebiet' : ''} – antippen zum Übernehmen</small>
+      <div class="sim-list">${list.map(x => `<button type="button" data-sim="${esc(x.line)}" class="${Geo.norm(x.street) === cur ? 'on' : ''}"><b>${esc(x.street)}</b><span>${esc(x.place)}${x.outside ? ' · außerhalb' : ''}</span></button>`).join('')}</div></div>`;
+  }
   function editorHtml(s) {
     return `<div class="editor" data-editor="${s.id}">
       <input class="ed-q" value="${esc(s.query)}" autocomplete="off" aria-label="Adresse">
       <div class="suggest" hidden></div>
+      ${similarHtml(s)}
       <div class="ed-row">
         <div class="stepper"><button type="button" data-step="-1" aria-label="Weniger">−</button><span><b class="ed-pk">${s.pk || 0}</b> Pakete</span><button type="button" data-step="1" aria-label="Mehr">+</button></div>
         <button class="btn ghost" data-ed="cancel">Abbrechen</button>
@@ -593,6 +693,14 @@
     inp.addEventListener('input', () => { hit = null; });
     if (matchMedia('(pointer:fine)').matches) { inp.focus(); inp.select(); }
     ed.onclick = e => {
+      const sim = e.target.closest('[data-sim]');
+      if (sim) {                                   // ähnliche Straße gewählt → Hausnummer behalten, gleich speichern
+        inp.value = sim.dataset.sim; hit = null;
+        ed.querySelectorAll('[data-sim]').forEach(b => b.classList.toggle('on', b === sim));
+        if (!Geo.parseQuery(sim.dataset.sim).housenumber) { inp.focus(); const p = sim.dataset.sim.indexOf(','); inp.setSelectionRange(p, p); return; }
+        delete s.fixedFrom;
+        ed.querySelector('[data-ed="save"]').click(); return;
+      }
       const st = e.target.closest('[data-step]');
       if (st) { pk = Math.max(0, Math.min(999, pk + +st.dataset.step)); ed.querySelector('.ed-pk').textContent = pk; return; }
       const b = e.target.closest('[data-ed]'); if (!b) return;
@@ -838,7 +946,12 @@
     addAddresses(lines);
     ta.value = ''; $('#q-suggest').hidden = true;
     const added = stops.filter(s => !before.has(s.id));
-    $('#q-added').insertAdjacentHTML('afterbegin', added.map(s => `<li>${ICON.check}<span>${esc(s.query)}</span>${pkPill(s)}</li>`).join(''));
+    $('#q-added').insertAdjacentHTML('afterbegin', added.map(s => {
+      const known = Geo.streetLookup(s.query, settings.depot) || Geo.addrLookup(s.query, settings.depot);
+      const sim = known ? [] : Geo.similarStreets(s.fixedFrom || s.query, settings.depot, 4).filter(x => !x.exact);
+      return `<li data-qid="${s.id}">${known ? ICON.check : ICON.warn}<span>${esc(s.query)}${s.fixedFrom ? `<small class="fixed-note">korrigiert aus „${esc(s.fixedFrom)}“</small>` : ''}</span>${pkPill(s)}
+        ${sim.length ? `<div class="sim-list q">${sim.map(x => `<button type="button" data-qsim="${esc(x.line)}"><b>${esc(x.street)}</b><span>${esc(x.place)}</span></button>`).join('')}</div>` : ''}</li>`;
+    }).join(''));
     if (navigator.vibrate) navigator.vibrate(15);
   }
   function openQuick() {
@@ -855,6 +968,15 @@
     if (n) toast(`${n} Adresse${n > 1 ? 'n' : ''} hinzugefügt`);
   }
   $('#top-mic').onclick = openQuick;
+  $('#q-added').addEventListener('click', e => {
+    const b = e.target.closest('[data-qsim]'); if (!b) return;
+    const li = b.closest('li'), s = stopById(li.dataset.qid); if (!s) return;
+    const line = b.dataset.qsim;
+    Object.assign(s, { query: line, status: 'pending', alts: null, label: '' }); delete s.fixedFrom;
+    persist(); renderStops(); runGeocoding();
+    li.querySelector('span').textContent = line; li.querySelector('.sim-list').remove();
+    li.firstElementChild.outerHTML = ICON.check;
+  });
   $('#quick-close').onclick = closeQuick;
   $('#quick').addEventListener('click', e => { if (e.target.id === 'quick') closeQuick(); });
   $('#q-add').onclick = () => { if (dict.active && dictTarget === $('#q-input')) { dict.stop(); } else quickSubmit(); };
@@ -929,7 +1051,6 @@
         const bad = stops.filter(s => s.status === 'err').length;
         if (bad) toast(`${bad} Adresse${bad > 1 ? 'n' : ''} nicht gefunden – steht unter „Noch offen“`, 3500);
         scrollTo({ top: 0, behavior: 'smooth' });
-        setTimeout(() => Map_.play(8), 900);          // kurz die ersten Stopps anfliegen, dann alles zeigen
       }
       Pois.refresh();
     } catch (e) {
@@ -1348,25 +1469,39 @@
     $('#greeting').innerHTML = `${g}${settings.name ? ', ' + esc(settings.name) : ''}.<small>${ok ? `${ok} Stopp${ok > 1 ? 's' : ''} ab ` : 'Start und Ziel: '}<button class="depot-link" id="depot-link">${esc(settings.depot?.name || 'Depot')}</button></small>`;
     $('#depot-link').onclick = openSettings;
     const c = Geo.streetCount();
-    $('#area-hint').textContent = c ? `${c.streets} Straßen in ${c.places} Orten bekannt` : 'eine pro Zeile';
+    const a = Geo.addrCount();
+    $('#area-hint').textContent = indexState === 'loading' || indexState === 'addr' ? 'Gebiet wird gespeichert …' : c ? `${c.streets} Straßen${a ? ', ' + a.n.toLocaleString('de-DE') + ' Hausnummern' : ''} gespeichert` : 'eine pro Zeile';
   }
 
   /* ---------- Straßenverzeichnis laden ---------- */
-  let indexState = '';
+  var indexState = '';
   async function loadIndex(force) {
-    if (!settings.depot || indexState === 'loading') return;
-    indexState = 'loading'; renderIndexInfo();
+    if (!settings.depot || indexState === 'loading' || indexState === 'addr') return;
+    indexState = 'loading'; renderIndexInfo(); renderGreeting();
     try { await Geo.loadStreets(settings.depot, force); indexState = ''; }
     catch (_) { indexState = 'error'; }
     applyArea(); renderAreaCard(); renderStops();
+    if (indexState !== 'error') {
+      indexState = 'addr'; renderIndexInfo(); renderGreeting();
+      try { await Geo.loadAddresses(settings.depot, force); indexState = ''; }
+      catch (_) { indexState = 'addr-error'; }
+      // schon eingetragene, nur ungefähr gefundene Adressen jetzt exakt setzen
+      let better = 0;
+      stops.forEach(s => { if (s.status !== 'ok' || !s.approx) return; const r = Geo.addrLookup(s.query, settings.depot); if (r) { Object.assign(s, { lat: r.lat, lon: r.lon, label: r.label, approx: false }); better++; } });
+      if (better) { persist(); if (route) plan(false); else { renderStops(); Map_.render(); } }
+    }
     renderIndexInfo(); renderGreeting();
   }
   function renderIndexInfo() {
-    const c = Geo.streetCount(), el = $('#s-index');
-    el.innerHTML = `<span><b>Straßenverzeichnis</b><small>${indexState === 'loading' ? 'wird geladen …' : c ? `${c.streets} Straßen in ${c.places} Orten im Umkreis von 12 km um dein Depot · Stand ${new Date(c.ts).toLocaleDateString('de-DE')}` : indexState === 'error' ? 'gerade nicht erreichbar – Vorschläge kommen solange vom Online-Dienst' : 'noch nicht geladen'}</small></span>
-      <button class="btn ghost" id="s-index-load" ${indexState === 'loading' ? 'disabled' : ''}>Aktualisieren</button>`;
+    const c = Geo.streetCount(), a = Geo.addrCount(), el = $('#s-index');
+    const st = indexState === 'loading' ? 'Straßen werden geladen …' : indexState === 'addr' ? 'Hausnummern werden geladen … (kann eine Minute dauern)'
+      : c ? `${c.streets} Straßen in ${c.places} Orten${a ? ` · ${a.n.toLocaleString('de-DE')} Hausnummern` : ''} · Stand ${new Date(c.ts).toLocaleDateString('de-DE')}${indexState === 'addr-error' ? ' · Hausnummern gerade nicht erreichbar' : ''}`
+      : indexState === 'error' ? 'gerade nicht erreichbar – später noch mal versuchen' : 'noch nicht geladen';
+    el.innerHTML = `<span><b>Gebiet offline gespeichert</b><small>${st}</small><small>12 km um dein Depot aus OpenStreetMap: Straßen und Hausnummern. Danach findet die App Adressen sofort, auch ohne Netz.</small></span>
+      <button class="btn ${c && a ? 'ghost' : 'primary'}" id="s-index-load" ${indexState === 'loading' || indexState === 'addr' ? 'disabled' : ''}>${c && a ? 'Aktualisieren' : 'Herunterladen'}</button>`;
     $('#s-index-load').onclick = () => loadIndex(true);
   }
+
 
   /* ---------- Zustellgebiet ---------- */
   function defaultArea() {                    // Ort des Depots plus Orte, die sehr nah dran liegen
@@ -1432,6 +1567,8 @@
     renderNavChoices($('#s-nav'), true);
     renderThemeChoices($('#s-theme'));
     renderMapStyleChoices($('#s-mapstyle'));
+    $('#s-meicon').innerHTML = Object.entries(ME_ICONS).map(([k, v]) => `<button data-mi="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}">${v.name.replace('Gelber ', '')}</button>`).join('');
+    $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
     renderAreaChips($('#s-area'));
     $('#s-tomtom').value = settings.tomtom || '';
     renderIndexInfo();

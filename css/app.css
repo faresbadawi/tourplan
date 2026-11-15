@@ -731,3 +731,40 @@ body.map-full .map-wrap.full .leaflet-bottom { bottom: calc(78px + env(safe-area
 .area-card .ic svg { width: 24px; height: 24px; }
 .area-card .btn { padding: 10px 14px; }
 @media (max-width: 440px) { .area-card { flex-wrap: wrap; } .area-card .txt { flex-basis: calc(100% - 40px); } .area-card .btn { flex: 1; } }
+
+/* =====================================================================
+   Version 5 – ähnliche Straßen, Standort, Kartenwahl
+   ===================================================================== */
+.sheet-backdrop { z-index: 1700; }
+.similar { margin: 10px 0 4px; }
+.similar small { display: block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.sim-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.sim-list button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); border-radius: 14px; padding: 8px 12px; min-height: 44px; transition: transform .18s var(--spring), border-color .15s; }
+.sim-list button b { font-weight: 600; font-size: 15px; }
+.sim-list button span { font-size: 12.5px; color: var(--muted); }
+.sim-list button.on, .sim-list button:active { border-color: var(--accent); background: var(--accent-soft); }
+.sim-list button:active { transform: scale(.95); }
+.q-added li { flex-wrap: wrap; }
+.q-added li > span { display: flex; flex-direction: column; }
+.q-added li small { font-size: 12.5px; font-weight: 500; }
+.sim-list.q { flex-basis: 100%; padding-left: 28px; }
+.q-added li:has(.sim-list) { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.q-added li:has(.sim-list) > svg { color: var(--warn); }
+
+/* Standort */
+.me { width: 44px; height: 44px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.35)); }
+.me-rot { width: 100%; height: 100%; transition: transform .35s ease-out; }
+.me-rot svg { width: 100%; height: 100%; display: block; }
+.me-dot.no-heading .cone { display: none; }
+.map-fab.locate.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.me-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.me-choices button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border: 1.5px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; }
+.me-choices button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.me-prev { width: 40px; height: 40px; display: block; }
+.me-prev svg { width: 100%; height: 100%; }
+.menu-item.now { border-color: var(--accent); }
+.menu-item > svg:last-child { margin-left: auto; color: var(--accent); }
+.idx { align-items: flex-start; }
+.idx small + small { display: block; margin-top: 4px; }
+.q-added .pk i { display: none; }
+.q-added .pk { margin-left: auto; align-self: center; }

@@ -41,3 +41,12 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Einrichtung per Link auf ein anderes Gerät übertragen.
 - Neuer Abhak-Ton (heller, aufsteigender Glockenklang).
 - Service Worker wiederhergestellt (war in Version 3 versehentlich leer).
+
+## Version 5
+
+- Keine automatische Flug-Animation mehr: am Anfang die ganze Tour, im Vollbild direkt zum nächsten Stopp.
+- Ähnliche Straßen (Schreibweise + Klang, Kölner Phonetik) beim Antippen eines Stopps und im Eingabe-Fenster.
+- Gebiet offline: Straßen und alle Hausnummern (12 km) werden gespeichert → exakte Adressen sofort, ohne Netz.
+- Fehler behoben: Straßenverzeichnis brach nach 20 s ab, der Dienst braucht aber ~35 s.
+- Kartenstil selbst wählen (Liste statt Durchschalten), gesehene Kartenkacheln bleiben gespeichert.
+- Eigener Standort mit Blickrichtung: Pfeil, gelber Lieferwagen oder Punkt.
