@@ -127,6 +127,39 @@
     return limit === 1 ? (list[0] || null) : list;
   }
 
+  /* ---------- TomTom (optional, eigener Schlüssel) ----------
+     Genauere Hausnummern; wird zuerst gefragt, wenn ein Schlüssel hinterlegt ist. */
+  let ttKey = '';
+  const setKeys = k => { ttKey = (k && k.tomtom || '').trim(); };
+  async function tomtom(q, bias, { limit = 5, typeahead = false, signal } = {}) {
+    if (!ttKey) return [];
+    const u = new URL(`https://api.tomtom.com/search/2/${typeahead ? 'search' : 'geocode'}/${encodeURIComponent(q)}.json`);
+    u.searchParams.set('key', ttKey); u.searchParams.set('countrySet', 'DE'); u.searchParams.set('language', 'de-DE');
+    u.searchParams.set('limit', String(limit));
+    if (typeahead) { u.searchParams.set('typeahead', 'true'); u.searchParams.set('idxSet', 'PAD,Addr,Str'); }
+    if (bias) { u.searchParams.set('lat', bias.lat); u.searchParams.set('lon', bias.lon); if (typeahead) u.searchParams.set('radius', '40000'); }
+    const r = await fetch(u, { signal: signal || AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error('TomTom ' + r.status);
+    return ((await r.json()).results || []).filter(x => x.address && x.position).map(x => {
+      const a = x.address, city = a.municipalitySubdivision && a.municipality && norm(a.municipalitySubdivision) !== norm(a.municipality) ? a.municipalitySubdivision : (a.municipality || a.municipalitySubdivision || '');
+      const line1 = [a.streetName, a.streetNumber].filter(Boolean).join(' ');
+      return { lat: x.position.lat, lon: x.position.lon, street: a.streetName || '', hn: (a.streetNumber || '').toLowerCase().replace(/\s/g, ''),
+        label: [line1, [a.postalCode, city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || a.freeformAddress, city, postcode: a.postalCode || '',
+        km: bias ? haversine(bias.lat, bias.lon, x.position.lat, x.position.lon) / 1000 : null };
+    });
+  }
+  async function tomtomGeocode(query, depot) {
+    const parsed = parseQuery(query), want = norm(parsed.street);
+    const hasPlace = /,/.test(query) || parsed.plz;
+    const q = !hasPlace && depot && depot.city ? query + ', ' + depot.city : query;
+    const list = await tomtom(q, depot, { limit: 5 }).catch(() => []);
+    const ok = list.filter(x => !want || norm(x.street) === want || norm(x.street).includes(want))
+      .filter(x => x.km === null || x.km < 60)
+      .sort((a, b) => ((b.hn === parsed.housenumber) - (a.hn === parsed.housenumber)) || (a.km || 0) - (b.km || 0));
+    const b = ok[0];
+    return b ? { lat: b.lat, lon: b.lon, label: b.label, city: b.city, postcode: b.postcode, approx: !!parsed.housenumber && b.hn !== parsed.housenumber } : null;
+  }
+
   /** Mehrere Kandidaten für eine ausdrücklich gestartete Suche (Knopf „Prüfen“). */
   async function candidates(query, depot) {
     let list = [];
@@ -148,6 +181,10 @@
     const bias = depot ? { lat: depot.lat, lon: depot.lon } : null;
     const parsed = parseQuery(query);
     const hasPlace = /,/.test(query) || parsed.plz;
+    if (ttKey) {
+      const t = await tomtomGeocode(query, depot);
+      if (t && !t.approx) { cache[key] = t; saveCache(); return t; }
+    }
 
     let feats = [];
     const jobs = [photon(query, bias).catch(() => [])];
@@ -189,6 +226,14 @@
   async function suggest(q, depot) {
     if (suggestCtl) suggestCtl.abort();
     suggestCtl = new AbortController();
+    if (ttKey) {
+      const parsed = parseQuery(q);
+      const list = await tomtom(q, depot, { limit: 8, typeahead: true, signal: suggestCtl.signal }).catch(() => []);
+      const seen = new Set();
+      const out = list.filter(x => x.label && !seen.has(x.label) && seen.add(x.label)).slice(0, 5).map(x => Object.assign(x, {
+        title: x.label.split(',')[0], sub: x.label.split(',').slice(1).join(',').trim(), exact: !!x.hn || !parsed.housenumber }));
+      if (out.length) return out;
+    }
     const u = new URL(PHOTON + '/api/');
     u.searchParams.set('q', q); u.searchParams.set('limit', '12'); u.searchParams.set('lang', 'de');
     if (depot) { u.searchParams.set('lat', depot.lat); u.searchParams.set('lon', depot.lon); }
@@ -362,6 +407,24 @@
     }
     return prev[b.length];
   }
+  /* Zustellgebiet: die Orte, in denen zugestellt wird. Straßen dort haben Vorrang, alles andere gilt als „außerhalb“. */
+  let area = new Set();
+  const setArea = names => { area = new Set((names || []).map(norm)); };
+  const inArea = x => !area.size || area.has(norm(x.p));
+  const nearest = (lat, lon) => { let b = null, bd = Infinity; for (const x of streets ? streets.list : []) { const d = haversine(lat, lon, x.lat, x.lon); if (d < bd) { bd = d; b = x; } } return b; };
+  /** Ort, in dem ein Punkt liegt (Ort der nächstgelegenen Straße). */
+  const placeAt = (lat, lon) => { const x = nearest(lat, lon); return x ? x.p : ''; };
+  const isOutside = (lat, lon) => { const p = placeAt(lat, lon); return !!p && area.size > 0 && !area.has(norm(p)); };
+  /** Alle Orte des Verzeichnisses, die nächsten am Depot zuerst. */
+  function places(depot) {
+    const m = new Map();
+    for (const x of streets ? streets.list : []) {
+      const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0, e = m.get(x.p);
+      if (e) { e.count++; e.km = Math.min(e.km, km); } else if (x.p) m.set(x.p, { name: x.p, count: 1, km });
+    }
+    return [...m.values()].sort((a, b) => a.km - b.km);
+  }
+
   const withNumber = (x, hn) => [[x.n, hn].filter(Boolean).join(' '), x.p].filter(Boolean).join(', ');
   const placeHit = (x, city) => { const c = norm(city); return !!c && (norm(x.p) === c || norm(x.p).includes(c) || c.includes(norm(x.p))); };
 
@@ -381,13 +444,14 @@
       }
       if (rank < 0) continue;
       if (parsed.city && placeHit(x, parsed.city)) rank -= 0.5;
+      if (!inArea(x)) rank += 0.6;
       const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0;
       out.push({ rank, km, x });
     }
     out.sort((a, b) => a.rank - b.rank || a.km - b.km);
     return out.slice(0, limit).map(({ x, km, rank }) => ({
       street: x.n, place: x.p, lat: x.lat, lon: x.lon, title: [x.n, parsed.housenumber].filter(Boolean).join(' '),
-      sub: x.p + (rank >= 2 ? ' · ähnlich geschrieben' : ''), label: withNumber(x, parsed.housenumber),
+      sub: x.p + (inArea(x) ? '' : ' · außerhalb') + (Math.round(rank) >= 2 ? ' · ähnlich geschrieben' : ''), label: withNumber(x, parsed.housenumber),
       exact: false, local: true, hasNumber: !!parsed.housenumber, km,
     }));
   }
@@ -400,9 +464,10 @@
     if (!hits.length) return null;
     const inPlace = parsed.city ? hits.filter(x => placeHit(x, parsed.city)) : [];
     if (parsed.city && !inPlace.length) return null;            // Ort genannt, aber dort nicht im Verzeichnis
-    const pool = inPlace.length ? inPlace : hits;
+    const home = hits.filter(inArea);
+    const pool = inPlace.length ? inPlace : home.length ? home : hits;
     const best = pool.slice().sort((a, b) => haversine(depot.lat, depot.lon, a.lat, a.lon) - haversine(depot.lat, depot.lon, b.lat, b.lon))[0];
-    return { n: best.n, p: best.p, lat: best.lat, lon: best.lon, sure: inPlace.length > 0 || hits.length === 1, label: withNumber(best, parsed.housenumber) };
+    return { n: best.n, p: best.p, lat: best.lat, lon: best.lon, sure: inPlace.length > 0 || hits.length === 1 || (area.size > 0 && home.length === 1), outside: !inArea(best), label: withNumber(best, parsed.housenumber) };
   }
 
   /** Straße unbekannt? → ähnlich geschriebene Straßen als Korrekturvorschlag (fertige Adresszeilen). */
@@ -413,11 +478,25 @@
     const max = want.length >= 12 ? 3 : 2, out = [];
     for (const x of streets.list) {
       const d = lev(want, x.k, max);
-      if (d <= max) out.push({ d: d - (parsed.city && placeHit(x, parsed.city) ? 0.5 : 0), km: haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000, x });
+      if (d <= max) out.push({ d: d - (parsed.city && placeHit(x, parsed.city) ? 0.5 : 0) - (inArea(x) ? 0.25 : 0), km: haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000, x });
     }
     out.sort((a, b) => a.d - b.d || a.km - b.km);
     const seen = new Set();
     return out.map(o => withNumber(o.x, parsed.housenumber)).filter(l => !seen.has(l) && seen.add(l)).slice(0, 3);
+  }
+  /** Verhörer, der sich eindeutig auflösen lässt (genau eine fast gleich geschriebene Straße im Zustellgebiet) → korrigierte Zeile. */
+  function streetAuto(query) {
+    if (!streets || !area.size) return null;
+    const parsed = parseQuery(query), want = norm(parsed.street);
+    if (parsed.city || want.length < 6 || streets.list.some(x => x.k === want)) return null;
+    const max = want.length >= 11 ? 2 : 1;
+    let best = [], bd = max + 1;
+    for (const x of streets.list) {
+      if (!inArea(x)) continue;
+      const d = lev(want, x.k, max);
+      if (d < bd) { bd = d; best = [x]; } else if (d === bd && d <= max && !best.some(b => b.k === x.k)) best.push(x);
+    }
+    return bd <= max && best.length === 1 ? withNumber(best[0], parsed.housenumber) : null;
   }
   const hasPlaceIn = q => /,/.test(q) || /\b\d{5}\b/.test(q);
 
@@ -490,5 +569,5 @@
     }
   }
 
-  window.Geo = { geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, hasPlaceIn, parseQuery, norm };
+  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetAuto, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
 })();

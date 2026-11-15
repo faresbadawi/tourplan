@@ -28,3 +28,16 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Tour-Überblick mit ausgeschriebenen Angaben statt Kennzahl-Pillen
 - „Tour beenden & speichern“ und Verlauf mit Monatskalender; alte Touren lassen sich neu laden
 - Kopfzeile: Verlauf und Einstellungen oben rechts
+
+## Version 4
+
+- Mikrofon oben in der Leiste öffnet ein Eingabe-Fenster und hört sofort zu.
+- Ein langer Satz wird in Straße, Hausnummer, Ort und Paketzahl zerlegt („Lindenweg 3 und 5 zwei Pakete, Am Markt 3 in Wittingen ein Paket“).
+- Fortschrittsbalken ganz oben: Stopps, Pakete übrig, voraussichtliches Ende. Knopf zum Beenden oder Abbrechen der Tour.
+- Zustellgebiet: Orte wählbar, Adressen außerhalb werden markiert, eindeutige Verhörer automatisch korrigiert.
+- Tour-Überblick als Kacheln mit Symbolen, Paketzahl auch bei der Eingabe.
+- Karte: Route abspielen (Stopp für Stopp anfliegen), pulsierender nächster Stopp, echter Vollbildmodus mit Leiste für Haken und Navigation, Kartenstile (Deutschland, Klar, Standard, Satellit, TomTom).
+- Optional TomTom-Schlüssel für genauere Hausnummern.
+- Einrichtung per Link auf ein anderes Gerät übertragen.
+- Neuer Abhak-Ton (heller, aufsteigender Glockenklang).
+- Service Worker wiederhergestellt (war in Version 3 versehentlich leer).

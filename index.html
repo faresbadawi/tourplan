@@ -85,6 +85,12 @@
         <span class="brand-name">Tourplan</span>
       </div>
       <div class="top-actions">
+        <button class="btn icon top-mic" id="top-mic" aria-label="Adressen hinzufügen (sprechen oder tippen)">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <button class="btn ghost icon" id="tour-stop" aria-label="Tour beenden oder abbrechen" hidden>
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+        </button>
         <button class="btn ghost icon" id="history-open" aria-label="Verlauf">
           <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
         </button>
@@ -92,11 +98,16 @@
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
         </button>
       </div>
+      <div class="topstrip" id="topstrip" hidden>
+        <div class="ts-text" id="ts-text"></div>
+        <div class="ts-bar"><span id="ts-fill"></span></div>
+      </div>
     </header>
 
     <main class="layout">
       <div class="col-main">
         <p class="greeting" id="greeting"></p>
+        <div id="area-card"></div>
 
         <!-- Eingabe -->
         <section class="card" id="input-card">
@@ -122,7 +133,7 @@
         <!-- Stopps -->
         <section class="card" id="stops-card" hidden>
           <div class="card-head">
-            <h2>Stopps <span class="count" id="stop-count">0</span></h2>
+            <h2>Stopps <span class="count" id="stop-count">0</span> <span class="pk-total" id="stop-pk"></span></h2>
             <button class="link" id="clear-btn">Alle entfernen</button>
           </div>
           <ol class="stops" id="stop-list"></ol>
@@ -161,7 +172,10 @@
             <button class="map-fab close" id="map-close" aria-label="Vollbild schließen" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
             <button class="map-fab full" id="map-full" aria-label="Vollbild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+            <button class="map-fab play" id="map-play" aria-label="Route abspielen" hidden><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>
+            <button class="map-fab layers" id="map-layers" aria-label="Kartenstil wechseln"><svg viewBox="0 0 24 24"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 16.5 9.5 5 9.5-5" opacity=".5"/></svg></button>
             <button class="poi-chip" id="poi-chip" hidden></button>
+            <div class="map-bar" id="map-bar" hidden></div>
           </div>
         </div>
       </aside>
@@ -189,6 +203,11 @@
       <div class="choice-grid compact" id="s-nav"></div>
       <h3 class="mini">Darstellung</h3>
       <div class="segmented" id="s-theme"></div>
+      <h3 class="mini">Karte</h3>
+      <div class="segmented" id="s-mapstyle"></div>
+      <h3 class="mini">Zustellgebiet</h3>
+      <p class="sheet-note" id="s-area-note">Tippe die Orte an, in denen du zustellst. Straßen dort werden bevorzugt vorgeschlagen, Adressen außerhalb werden markiert.</p>
+      <div class="area-chips" id="s-area"></div>
       <label class="switch">
         <input type="checkbox" id="s-roundtrip">
         <span class="track"><span class="thumb"></span></span>
@@ -208,11 +227,20 @@
         <span class="track"><span class="thumb"></span></span>
         <span>Packstationen &amp; Postfilialen an der Route<br><small>auf der Karte zeigen, mit Öffnungszeiten</small></span>
       </label>
+      <h3 class="mini">Genauere Adressen <em class="opt">optional</em></h3>
+      <label class="field"><span>TomTom-Schlüssel <em>kostenlos auf developer.tomtom.com</em></span>
+        <div class="input-row">
+          <input id="s-tomtom" type="text" autocomplete="off" spellcheck="false" placeholder="leer lassen = freie Dienste">
+          <button class="btn ghost" id="s-tomtom-test">Testen</button>
+        </div>
+      </label>
+      <p class="sheet-note" id="s-tomtom-note">Mit Schlüssel sucht die App Hausnummern zuerst bei TomTom und bietet die TomTom-Karte an.</p>
       <label class="switch">
         <input type="checkbox" id="s-sound">
         <span class="track"><span class="thumb"></span></span>
         <span>Töne &amp; Vibration beim Abhaken</span>
       </label>
+      <button class="menu-item" id="s-transfer" style="margin-top:18px"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span><b>Auf anderem Gerät einrichten</b><small>Link mit Depot, Farben, Gebiet und allen Einstellungen – öffnen, fertig</small></span></button>
       <div class="row-actions">
         <button class="btn danger ghost" id="s-reset">App zurücksetzen</button>
         <button class="btn primary" id="s-save">Speichern</button>
@@ -227,6 +255,29 @@
         <button class="btn ghost icon" id="sheet-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <!-- Schnell-Eingabe (Mikrofon oben) -->
+  <div class="sheet-backdrop" id="quick" hidden>
+    <div class="sheet quick" role="dialog" aria-modal="true" aria-labelledby="quick-title">
+      <div class="sheet-head">
+        <h2 id="quick-title">Neue Adressen</h2>
+        <button class="btn ghost icon" id="quick-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <button class="q-mic" id="q-mic" aria-label="Sprechen">
+        <span class="q-ring"></span>
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <p class="q-state" id="q-state">Antippen und sprechen</p>
+      <p class="q-interim" id="q-interim"></p>
+      <div class="composer">
+        <textarea id="q-input" rows="3" spellcheck="false" placeholder="oder tippen, z. B.&#10;Hauptstraße 12 drei Pakete Lindenweg 4"></textarea>
+        <div class="suggest" id="q-suggest" hidden></div>
+      </div>
+      <button class="btn primary wide big" id="q-add">Hinzufügen</button>
+      <ul class="q-added" id="q-added"></ul>
+      <p class="tiny">Sag ruhig alles in einem Satz: „Hauptstraße 5 drei Pakete, Lindenweg 12 und 14, Am Markt 3 in Wittingen ein Paket“ – die App trennt Straßen, Hausnummern, Orte und Pakete.</p>
     </div>
   </div>
 
