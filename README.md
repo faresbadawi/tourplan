@@ -77,5 +77,5 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Standort auf der Karte lässt sich ausschalten (Knopf zweimal tippen); die Wahl bleibt gespeichert
 - „Route optimieren“ in einer laufenden Tour sortiert die offenen Stopps ab deinem aktuellen Standort; Abhaken ändert die Reihenfolge nie
 - Großer Hinweis, wenn Adressen nicht gefunden wurden oder mehrdeutig sind; „Jetzt korrigieren“ springt direkt zur Straße und öffnet die Korrektur
-- Nie seitlich scrollen: lange Straßennamen brechen um, alles passt in die Bildschirmbreite
+- Nie seitlich scrollen: lange Straßennamen und alle Menüs (auch Einstellungen) brechen um und passen in die Bildschirmbreite
 - Altes Symbol und alte Farben bleiben

@@ -999,3 +999,13 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .stop.flash { animation: stopflash 1.6s ease; }
 @keyframes stopflash { 0%, 60% { box-shadow: 0 0 0 3px var(--warn); background: color-mix(in srgb, var(--warn) 25%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .stop.err { border-left: 4px solid var(--warn); }
+
+/* Menüs: Spalte nie breiter als der Bildschirm, lange Texte umbrechen statt seitlich zu scrollen */
+.menu, .s-menu, .menu.s-menu { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.menu-item { min-width: 0; max-width: 100%; }
+.menu-item small { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.menu-item b { overflow-wrap: anywhere; }
+.sheet, .settings-sheet, #sheet-body, .s-page { min-width: 0; max-width: 100%; overflow-x: hidden; }
+.field, .field input, .input-row, .input-row input { min-width: 0; max-width: 100%; }
+.poi-list, .hist-list, .q-added, .howto ul { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.poi-list > *, .hist-list > *, .q-added > * { min-width: 0; overflow-wrap: anywhere; }

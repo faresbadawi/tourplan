@@ -1,4 +1,4 @@
-const CACHE = 'tourplan-v10';
+const CACHE = 'tourplan-v11';
 const TILES = 'tourplan-tiles', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
 let puts = 0;
 const trim = c => c.keys().then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - MAX_TILES)).map(k => c.delete(k))));
