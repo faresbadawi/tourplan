@@ -1,8 +1,8 @@
-const CACHE = 'tourplan-v12';
+const CACHE = 'tourplan-v13';
 const TILES = 'tourplan-tiles', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
 let puts = 0;
 const trim = c => c.keys().then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - MAX_TILES)).map(k => c.delete(k))));
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/geo.js', 'js/optimize.js', 'js/speech.js', 'js/ai.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/geo.js', 'js/optimize.js', 'js/speech.js', 'js/ai.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const TILE_HOST = /(^|\.)(tile\.openstreetmap\.(de|org|fr)|arcgisonline\.com)$/;
 // a./b./c.-Subdomains zeigen dieselbe Kachel → ein gemeinsamer Schlüssel
 const tileKey = url => url.replace(/\/\/[abc]\.tile\.openstreetmap\.fr\//, '//a.tile.openstreetmap.fr/');
