@@ -917,10 +917,10 @@ body.touring .greeting { display: none; }
 
 /* Anleitung zum Schreiben */
 .howto { margin-top: 12px; border-radius: 16px; background: var(--surface-2); padding: 2px 14px; }
-.howto summary { cursor: pointer; padding: 11px 0; font-weight: 700; font-size: 14.5px; color: var(--accent); list-style: none; display: flex; align-items: center; gap: 8px; }
-.howto summary::-webkit-details-marker { display: none; }
-.howto summary::before { content: "?"; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 13px; font-weight: 800; flex: none; }
-.howto summary::after { content: "›"; margin-left: auto; font-size: 20px; transition: transform .2s; }
+
+
+
+
 .howto[open] summary::after { transform: rotate(90deg); }
 .howto ul { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
 .howto li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--surface); border-radius: 12px; }
@@ -968,3 +968,54 @@ body.touring .greeting { display: none; }
 .pin.dot:empty::after { width: 8px; height: 8px; }
 .pin.dot > * , .pin.dot { line-height: 1; }
 .pin.dot span { transform: rotate(45deg); display: block; }
+
+/* ============ Version 8: mehr Kontrast, Info-Knopf, Korrektur-Hinweis, nie seitlich scrollen ============ */
+:root {
+  --text: #050C1A; --muted: #43506A; --border: #BFCADA; --surface-2: #DCE4EF;
+}
+:root[data-theme="dark"] {
+  --bg: #04080F; --surface: #131E33; --surface-2: #1E2C48; --text: #FFFFFF;
+  --muted: #B4C0D6; --border: #34476A; --accent-soft: #123452;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #04080F; --surface: #131E33; --surface-2: #1E2C48; --text: #FFFFFF;
+    --muted: #B4C0D6; --border: #34476A; --accent-soft: #123452;
+  }
+}
+.card, .stat, .stop, .area-card { border-color: var(--border); }
+:root[data-theme="dark"] .card, :root:not([data-theme="light"]) .card { box-shadow: 0 0 0 1px var(--border), var(--shadow); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .card { box-shadow: 0 0 0 1px var(--border), var(--shadow); } }
+.stop .r, .route .r, .hint, .tiny { color: var(--muted); }
+.stop .q, .route .q { font-weight: 650; }
+
+/* Nie seitlich scrollen: alles passt in die Bildschirmbreite */
+html, body { max-width: 100%; overflow-x: hidden; }
+.layout, .col-main, .col-map, .card, .card-head, .stop, .stop .row-main, .route li, .route .txt, .stop .txt, .poi, .tour-bar, .next-card, .stat, .stops, .route { min-width: 0; max-width: 100%; }
+.stop .q, .stop .r, .route .q, .route .r, .next-card *, .tour-bar *, .poi .txt, .area-card .txt, .sheet-body, #sheet-body * { overflow-wrap: anywhere; word-break: break-word; }
+.stop .row-main, .route li { flex-wrap: nowrap; }
+.stop .acts { flex: none; }
+.stats { overflow-x: visible; }
+.sim-list, .alts { flex-wrap: wrap; }
+.sim-list button, .alts button { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.editor, .editor .ed-q, .ed-row { max-width: 100%; min-width: 0; }
+.ed-row { flex-wrap: wrap; }
+@media (max-width: 440px) { .pk i { display: none; } .stop .row-main { gap: 8px; } }
+
+/* Info-Knopf bei "Adressen" */
+.card-head .info-btn { margin-left: 8px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent); font: 800 15px/1 var(--sans); font-style: italic; flex: none; display: grid; place-items: center; cursor: pointer; }
+.card-head .info-btn:active { transform: scale(.92); }
+.howto { margin: 0; background: none; padding: 0; }
+.howto ul { margin: 0; }
+.howto li { border: 1px solid var(--border); }
+
+/* Großer Korrektur-Hinweis */
+.problem { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 14px; border-radius: 18px; background: color-mix(in srgb, var(--warn) 22%, var(--surface)); border: 2px solid var(--warn); }
+.problem .pb-ico { width: 38px; height: 38px; border-radius: 50%; background: var(--warn); color: #1a1100; font: 800 22px/1 var(--sans); display: grid; place-items: center; flex: none; }
+.problem .pb-txt { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.problem .pb-txt b { font-size: 16px; color: var(--text); }
+.problem .pb-txt span { font-size: 13px; color: var(--muted); }
+.problem .btn { flex: 1 1 100%; }
+.stop.flash { animation: stopflash 1.6s ease; }
+@keyframes stopflash { 0%, 60% { box-shadow: 0 0 0 3px var(--warn); background: color-mix(in srgb, var(--warn) 25%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.stop.err { border-left: 4px solid var(--warn); }

@@ -462,7 +462,10 @@
   $('#map-layers').onclick = openLayerSheet;
   addEventListener('online', () => Map_.setTiles()); addEventListener('offline', () => Map_.setTiles());
   $('#map-zoom').onclick = () => Map_.toggleZoom();
-  $('#map-locate').onclick = () => Me.start(true);
+  $('#map-locate').onclick = () => {
+    if (Me.follow) { Me.stop(); settings.meOff = true; persist(); toast('Standort ausgeschaltet'); }      // zweites Antippen = aus
+    else { settings.meOff = false; persist(); Me.start(true); toast('Karte folgt dir – nochmal tippen zum Ausschalten', 2800); }
+  };
 
   /* ---------- Eigener Standort mit Blickrichtung (Pfeil, Lieferwagen oder Punkt) ---------- */
   const ME_ICONS = {
@@ -505,11 +508,12 @@
       const m = Map_.ensure(); if (!m) return;
       if (fromClick) { this.compass(true); this.follow = true; if (this.pos) m.flyTo([this.pos.lat, this.pos.lon], Math.max(m.getZoom(), 16), { duration: .6 }); }
       $('#map-locate').classList.toggle('on', this.follow);
+      if (!this.dragWired) { this.dragWired = true; m.on('dragstart', () => { this.follow = false; $('#map-locate').classList.remove('on'); }); }
       if (this.watchId != null) return;
       if (!navigator.geolocation) return toast('Standort wird hier nicht unterstützt');
       this.watchId = navigator.geolocation.watchPosition(p => {
         const c = p.coords;
-        this.pos = { lat: c.latitude, lon: c.longitude, speed: c.speed || 0 };
+        this.pos = { lat: c.latitude, lon: c.longitude, speed: c.speed || 0, t: Date.now() };
         if (c.heading != null && !isNaN(c.heading) && (c.speed || 0) > 2.5) { this.heading = c.heading; }
         if (!this.marker) {
           this.marker = L.marker([c.latitude, c.longitude], { zIndexOffset: 2000, interactive: false, icon: L.divIcon({ className: '', html: this.html(), iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(m);
@@ -525,8 +529,15 @@
         if (fromClick) toast(err.code === 1 ? 'Standort nicht freigegeben – in den Browser-Einstellungen erlauben' : 'Standort gerade nicht verfügbar', 3500);
       }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
     },
-    auto() {                     // Standort schon erlaubt → im Vollbild gleich anzeigen (ohne Nachfrage)
-      if (this.watchId != null || !navigator.permissions) return;
+    stop() {                     // Standort ganz ausschalten: Anzeige weg, kein Mitlaufen, keine GPS-Abfrage mehr
+      if (this.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null; this.follow = false; this.first = true; this.pos = null;
+      if (this.marker) this.marker.remove(); if (this.acc) this.acc.remove();
+      this.marker = this.acc = null;
+      $('#map-locate').classList.remove('on');
+    },
+    auto() {                     // Standort schon erlaubt → im Vollbild gleich anzeigen (ohne Nachfrage), außer du hast ihn ausgeschaltet
+      if (settings.meOff || this.watchId != null || !navigator.permissions) return;
       navigator.permissions.query({ name: 'geolocation' }).then(p => { if (p.state === 'granted') { this.start(false); this.compass(false); } }).catch(() => {});
     },
   };
@@ -624,7 +635,7 @@
       known.set(query.toLowerCase(), s);
       stops.push(s); added++;
     }
-    persist(); renderStops(); Map_.render(); runGeocoding();
+    persist(); renderStops(); Map_.render(); jumpAfter = added > 0; runGeocoding();
     return added;
   }
 
@@ -693,6 +704,7 @@
   }
   function geocodingDone() {
     renderStops();
+    if (jumpAfter) { jumpAfter = false; problemIdx = 0; const l = route ? stops.filter(x => !route.order.includes(x.id)) : stops; if (problemsOf(l).length) setTimeout(jumpToProblem, 250); }
     // läuft schon eine Tour, kommen neue Adressen automatisch an die beste Stelle
     if (route && stops.some(s => s.status === 'ok' && !route.order.includes(s.id))) plan(true);
   }
@@ -808,6 +820,7 @@
       </li>`;
     }).join('');
     wireEditor($('#stop-list'));
+    renderProblem(list);
     const pending = stops.some(s => s.status === 'pending');
     const okCount = stops.filter(s => s.status === 'ok').length;
     const btn = $('#optimize-btn');
@@ -816,7 +829,26 @@
     btn.lastChild.textContent = pending ? ' Adressen werden gesucht …' : ` Route optimieren (${okCount})`;
     renderGreeting();
     renderDock();
-    const ht = $('#howto'); if (ht && !ht.dataset.touched) ht.open = !stops.length;
+  }
+
+  /* Großer Hinweis oben in der Liste: nicht gefundene oder mehrdeutige Adressen */
+  let problemIdx = 0, jumpAfter = false;
+  const problemsOf = list => list.filter(s => s.status === 'err' || s.status === 'ask');
+  function renderProblem(list) {
+    const box = $('#problem'), bad = problemsOf(list);
+    box.hidden = !bad.length;
+    if (!bad.length) return;
+    box.innerHTML = `<div class="pb-ico">!</div><div class="pb-txt"><b>${bad.length} Adresse${bad.length > 1 ? 'n' : ''} bitte korrigieren</b><span>Straße nicht gefunden oder mehrmals vorhanden</span></div><button class="btn primary" data-jump>Jetzt korrigieren</button>`;
+    box.querySelector('[data-jump]').onclick = () => jumpToProblem();
+  }
+  function jumpToProblem() {
+    const list = route ? stops.filter(s => !route.order.includes(s.id)) : stops, bad = problemsOf(list);
+    if (!bad.length) return;
+    const s = bad[problemIdx++ % bad.length];
+    if (s.status === 'err') editingId = s.id;               // Bearbeiten mit ähnlichen Straßen öffnet sich gleich
+    renderStops();
+    const li = document.querySelector(`#stop-list [data-id="${s.id}"]`);
+    if (li) { li.scrollIntoView({ behavior: 'smooth', block: 'center' }); li.classList.add('flash'); setTimeout(() => li.classList.remove('flash'), 1800); }
   }
 
   function removeStop(id) {
@@ -1107,7 +1139,14 @@
   /* ---------- Planung ----------
      reopt = true: offene Stopps neu sortieren (erledigte bleiben vorn stehen)
      reopt = false: Reihenfolge behalten, nur Strecke neu berechnen (nach Löschen/Bearbeiten) */
-  let planning = false, planAgain = null;
+  let planning = false, planAgain = null, gpsNote = '';
+  function whereAmI() {                          // aktuelle Position (frisch genug oder kurz nachfragen)
+    if (Me.pos && Date.now() - (Me.pos.t || 0) < 90000) return Promise.resolve(Me.pos);
+    if (!navigator.geolocation) return Promise.resolve(null);
+    return new Promise(res => navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now() }), () => res(null),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 6000 }));
+  }
   async function plan(reopt) {
     if (planning) { planAgain = planAgain || reopt; return; }
     const depot = settings.depot;
@@ -1122,7 +1161,12 @@
       let rest = inPrev.filter(s => !prev.done[s.id]).concat(ok.filter(s => !inPrev.includes(s)));
       let saving = prev ? prev.saving : 0, source = 'osrm';
       if (reopt && rest.length > 1) {
-        const start = doneStops.length ? doneStops[doneStops.length - 1] : depot;
+        let start = doneStops.length ? doneStops[doneStops.length - 1] : depot, fromMe = false;
+        if (!first) {                                        // laufende Tour: ab dem Punkt, an dem du gerade bist
+          const me = await whereAmI();
+          if (me) { start = { lat: me.lat, lon: me.lon, label: 'Dein Standort' }; fromMe = true; }
+        }
+        gpsNote = fromMe ? 'Neu sortiert – ab deinem Standort' : (first ? '' : 'Standort nicht verfügbar – sortiert ab dem letzten erledigten Stopp');
         const pts = [start, ...rest];
         const backIdx = settings.roundtrip && start !== depot ? pts.push(depot) - 1 : 0;
         const M = await Geo.matrix(pts);
@@ -1144,6 +1188,7 @@
         saving, done, created: prev ? prev.created : Date.now(), roundtrip: settings.roundtrip,
       };
       persist(); renderStops(); renderResult();
+      if (gpsNote) { toast(gpsNote, 3200); gpsNote = ''; }
       if (first) {
         const bad = stops.filter(s => s.status === 'err').length;
         if (bad) toast(`${bad} Adresse${bad > 1 ? 'n' : ''} nicht gefunden – steht unter „Noch offen“`, 3500);
@@ -1935,7 +1980,7 @@
     Pois.refresh();
     loadIndex(false);
     setTimeout(() => Me.auto(), 900);             // Standort schon erlaubt → gleich auf der Startkarte zeigen
-    $('#howto').addEventListener('toggle', () => { $('#howto').dataset.touched = '1'; });
+    $('#howto-btn').onclick = () => openSheet('So schreibst oder sagst du Adressen', `<div class="howto">${$('#howto-tpl').innerHTML}</div>`);
   }
 
   applyTheme();

@@ -69,3 +69,13 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Einstellungen mit Unterseiten: Zustellgebiet, Tour & Navigation, Darstellung & Karte, Schlüssel & KI.
 - Gebietswahl: auf die Karte tippen setzt den Mittelpunkt (Nadel ziehbar), der Kreis zieht sich auf.
 - KI jetzt mit Groq (kostenloser Schlüssel „gsk_…“); Schlüssel gehen beim Übertragen auf andere Geräte mit.
+
+## Version 8
+
+- Mehr Kontrast (dunkel und hell): hellere Schrift, sichtbare Kartenränder, kräftigere Trennlinien
+- „So schreibst du Adressen“ als Popup hinter dem Info-Knopf (i) bei „Adressen“
+- Standort auf der Karte lässt sich ausschalten (Knopf zweimal tippen); die Wahl bleibt gespeichert
+- „Route optimieren“ in einer laufenden Tour sortiert die offenen Stopps ab deinem aktuellen Standort; Abhaken ändert die Reihenfolge nie
+- Großer Hinweis, wenn Adressen nicht gefunden wurden oder mehrdeutig sind; „Jetzt korrigieren“ springt direkt zur Straße und öffnet die Korrektur
+- Nie seitlich scrollen: lange Straßennamen brechen um, alles passt in die Bildschirmbreite
+- Neues App-Symbol (Standort-Pin mit gepunkteter Route auf blauem Verlauf)

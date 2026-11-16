@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon.svg?v=8" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png?v=8">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Tourplan">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -116,6 +116,7 @@
           <div class="card-head">
             <h2>Adressen</h2>
             <span class="hint" id="area-hint">eine pro Zeile</span>
+            <button class="info-btn" id="howto-btn" type="button" aria-label="Hilfe: So schreibst du Adressen">i</button>
           </div>
           <div class="composer">
             <textarea id="addr-input" rows="3" spellcheck="false" placeholder="Hauptstraße 12 - 3&#10;Lindenweg 4 und 6"></textarea>
@@ -129,8 +130,7 @@
             </button>
             <button class="btn primary" id="add-btn">Hinzufügen</button>
           </div>
-          <details class="howto" id="howto">
-            <summary>So schreibst oder sagst du Adressen</summary>
+          <template id="howto-tpl">
             <ul>
               <li><code>Hauptstraße 12</code><span>eine Adresse pro Zeile – Ort ergänzt die App selbst</span></li>
               <li><code>Hauptstraße 12 - 3</code><span>mit <b>3 Paketen</b>: Zahl nach dem Strich</span></li>
@@ -139,7 +139,7 @@
               <li><code>Am Markt 3, Wittingen</code><span>Ort nur nötig, wenn es die Straße mehrmals gibt</span></li>
               <li><span class="say">🎙 „Hauptstraße zwölf drei Pakete, Lindenweg vier“</span><span>sprechen: Mikrofon gedrückt halten, loslassen – fertig</span></li>
             </ul>
-          </details>
+          </template>
         </section>
 
         <!-- Stopps -->
@@ -148,6 +148,7 @@
             <h2>Stopps <span class="count" id="stop-count">0</span> <span class="pk-total" id="stop-pk"></span></h2>
             <button class="link" id="clear-btn">Alle entfernen</button>
           </div>
+          <div class="problem" id="problem" hidden></div>
           <ol class="stops" id="stop-list"></ol>
           <button class="btn primary wide big" id="optimize-btn">
             <svg viewBox="0 0 24 24"><path d="M4 19c4-10 12-4 16-14"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg>
