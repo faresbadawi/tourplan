@@ -969,26 +969,7 @@ body.touring .greeting { display: none; }
 .pin.dot > * , .pin.dot { line-height: 1; }
 .pin.dot span { transform: rotate(45deg); display: block; }
 
-/* ============ Version 8: mehr Kontrast, Info-Knopf, Korrektur-Hinweis, nie seitlich scrollen ============ */
-:root {
-  --text: #050C1A; --muted: #43506A; --border: #BFCADA; --surface-2: #DCE4EF;
-}
-:root[data-theme="dark"] {
-  --bg: #04080F; --surface: #131E33; --surface-2: #1E2C48; --text: #FFFFFF;
-  --muted: #B4C0D6; --border: #34476A; --accent-soft: #123452;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #04080F; --surface: #131E33; --surface-2: #1E2C48; --text: #FFFFFF;
-    --muted: #B4C0D6; --border: #34476A; --accent-soft: #123452;
-  }
-}
-.card, .stat, .stop, .area-card { border-color: var(--border); }
-:root[data-theme="dark"] .card, :root:not([data-theme="light"]) .card { box-shadow: 0 0 0 1px var(--border), var(--shadow); }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .card { box-shadow: 0 0 0 1px var(--border), var(--shadow); } }
-.stop .r, .route .r, .hint, .tiny { color: var(--muted); }
-.stop .q, .route .q { font-weight: 650; }
-
+/* ============ Version 8: Info-Knopf, Korrektur-Hinweis, nie seitlich scrollen ============ */
 /* Nie seitlich scrollen: alles passt in die Bildschirmbreite */
 html, body { max-width: 100%; overflow-x: hidden; }
 .layout, .col-main, .col-map, .card, .card-head, .stop, .stop .row-main, .route li, .route .txt, .stop .txt, .poi, .tour-bar, .next-card, .stat, .stops, .route { min-width: 0; max-width: 100%; }
@@ -1007,7 +988,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .card-head .info-btn:active { transform: scale(.92); }
 .howto { margin: 0; background: none; padding: 0; }
 .howto ul { margin: 0; }
-.howto li { border: 1px solid var(--border); }
 
 /* Großer Korrektur-Hinweis */
 .problem { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 14px; border-radius: 18px; background: color-mix(in srgb, var(--warn) 22%, var(--surface)); border: 2px solid var(--warn); }
