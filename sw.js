@@ -1,4 +1,4 @@
-const CACHE = 'tourplan-v11';
+const CACHE = 'tourplan-v12';
 const TILES = 'tourplan-tiles', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
 let puts = 0;
 const trim = c => c.keys().then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - MAX_TILES)).map(k => c.delete(k))));
@@ -7,7 +7,8 @@ const TILE_HOST = /(^|\.)(tile\.openstreetmap\.(de|org|fr)|arcgisonline\.com)$/;
 // a./b./c.-Subdomains zeigen dieselbe Kachel → ein gemeinsamer Schlüssel
 const tileKey = url => url.replace(/\/\/[abc]\.tile\.openstreetmap\.fr\//, '//a.tile.openstreetmap.fr/');
 
-self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
+// Beim Installieren und bei jeder Anfrage beim Server nachfragen (nicht aus dem Browser-Zwischenspeicher), damit Updates sofort ankommen
+self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => fetch(u, { cache: 'reload' }).then(r => r.ok ? c.put(u, r) : null))))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => ![CACHE, TILES, OFFLINE].includes(k)).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
@@ -21,5 +22,5 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (u.origin !== location.origin) return;           // APIs, Fonts: immer live
-  e.respondWith(fetch(e.request).then(r => { const c = r.clone(); caches.open(CACHE).then(x => x.put(e.request, c)); return r; }).catch(() => caches.match(e.request)));
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(r => { const c = r.clone(); caches.open(CACHE).then(x => x.put(e.request, c)); return r; }).catch(() => caches.match(e.request)));
 });

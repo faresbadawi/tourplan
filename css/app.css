@@ -1009,3 +1009,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .field, .field input, .input-row, .input-row input { min-width: 0; max-width: 100%; }
 .poi-list, .hist-list, .q-added, .howto ul { grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .poi-list > *, .hist-list > *, .q-added > * { min-width: 0; overflow-wrap: anywhere; }
+/* Zur Sicherheit: Einstellungen nie breiter als der Bildschirm */
+#settings .sheet, .settings-sheet { width: 100%; max-width: 100vw; box-sizing: border-box; }
+#settings .s-page > *, #settings .s-menu > * { max-width: 100%; box-sizing: border-box; }
