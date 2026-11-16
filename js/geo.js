@@ -356,20 +356,34 @@
 
   const streetCount = () => streets ? { streets: streets.list.length, places: new Set(streets.list.map(x => x.p)).size, ts: streets.ts } : null;
 
-  async function loadStreets(depot, force) {
-    if (!depot) return null;
-    if (!force && streets && haversine(depot.lat, depot.lon, streets.lat, streets.lon) < 1500 && Date.now() - streets.ts < 30 * 864e5) return streetCount();
-    const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
-    const q = `[out:csv(::type,name,::lat,::lon;false;"|")][timeout:90];(way["highway"]["name"](around:${STREET_RADIUS},${la},${lo});node["place"~"^(city|town|village|hamlet|suburb)$"](around:${STREET_RADIUS + 3000},${la},${lo}););out center qt;`;
-    let text = null;
-    for (const url of [...OVERPASS, 'https://overpass.private.coffee/api/interpreter']) {
-      try {
-        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(90000) });
-        if (!r.ok) continue;
-        const t = await r.text();
-        if (/^(way|node)\|/m.test(t)) { text = t; break; }
-      } catch (_) {}
+  /* Große Overpass-Abfrage: Hauptserver (bei „zu viele Anfragen“ kurz warten und nochmal), dann Ersatzserver */
+  async function overpassText(q, valid) {
+    const get = async (url, signal) => {
+      const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal });
+      if (!r.ok) throw new Error(url + ' ' + r.status);
+      const t = await r.text();
+      if (!valid(t)) throw new Error('leer');
+      return t;
+    };
+    const MAIN = 'https://overpass-api.de/api/interpreter';
+    for (const wait of [0, 8000]) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      try { return await get(MAIN, AbortSignal.timeout(100000)); } catch (_) {}
     }
+    // Hauptserver gestört → Ersatzserver gleichzeitig fragen, der erste gültige gewinnt
+    const ctl = new AbortController(), stop = setTimeout(() => ctl.abort(), 120000);
+    const mirrors = ['https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+    try { return await Promise.any(mirrors.map(u => get(u, ctl.signal))); }
+    catch (_) { return null; }
+    finally { clearTimeout(stop); ctl.abort(); }
+  }
+
+  async function loadStreets(depot, force, radius = STREET_RADIUS) {
+    if (!depot) return null;
+    if (!force && streets && haversine(depot.lat, depot.lon, streets.lat, streets.lon) < 1500 && (streets.r || STREET_RADIUS) === radius && Date.now() - streets.ts < 30 * 864e5) return streetCount();
+    const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
+    const q = `[out:csv(::type,name,::lat,::lon;false;"|")][timeout:90];(way["highway"]["name"](around:${radius},${la},${lo});node["place"~"^(city|town|village|hamlet|suburb)$"](around:${radius + 3000},${la},${lo}););out center qt;`;
+    const text = await overpassText(q, t => /^(way|node)\|/m.test(t));
     if (!text) throw new Error('Straßenverzeichnis nicht erreichbar');
     const places = [], ways = [];
     text.split('\n').forEach(line => {
@@ -386,7 +400,7 @@
       if (e) { e.lat += w.lat; e.lon += w.lon; e.c++; } else byKey.set(key, { n: w.n, p, lat: w.lat, lon: w.lon, c: 1 });
     }
     const list = [...byKey.values()].map(e => ({ n: e.n, p: e.p, lat: +(e.lat / e.c).toFixed(5), lon: +(e.lon / e.c).toFixed(5) }));
-    streets = { lat: depot.lat, lon: depot.lon, ts: Date.now(), list };
+    streets = { lat: depot.lat, lon: depot.lon, r: radius, ts: Date.now(), list };
     try { localStorage.setItem(STREETS_KEY, JSON.stringify(streets)); } catch (_) {}
     streets.list.forEach(x => { x.k = norm(x.n); });
     return streetCount();
@@ -542,6 +556,25 @@
       street: x.n, place: x.p, line: withNumber(x, parsed.housenumber), outside: !inArea(x), km, exact: x.k === want }));
   }
 
+  /** Alle Orte, in denen es genau diese Straße gibt – eigenes Gebiet zuerst, dann nach Entfernung. */
+  function streetPlaces(query, depot) {
+    if (!streets) return [];
+    const want = norm(parseQuery(query).street), m = new Map();
+    for (const x of streets.list) if (x.k === want && x.p && !m.has(x.p)) m.set(x.p, x);
+    return [...m.values()].sort((a, b) => (inArea(b) - inArea(a)) || (depot ? haversine(depot.lat, depot.lon, a.lat, a.lon) - haversine(depot.lat, depot.lon, b.lat, b.lon) : 0))
+      .map(x => ({ place: x.p, inArea: inArea(x), km: depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0 }));
+  }
+  /** Orte (mit Straßenzahl) innerhalb eines Kreises – für die Gebietswahl auf der Karte */
+  function placesInCircle(lat, lon, rM) {
+    const m = new Map();
+    for (const x of streets ? streets.list : []) {
+      if (!x.p || haversine(lat, lon, x.lat, x.lon) > rM) continue;
+      const e = m.get(x.p); if (e) e.count++; else m.set(x.p, { name: x.p, count: 1, km: haversine(lat, lon, x.lat, x.lon) / 1000 });
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count);
+  }
+  const streetsCover = (lat, lon, rM) => !!streets && haversine(lat, lon, streets.lat, streets.lon) + rM <= (streets.r || STREET_RADIUS) + 300;
+
   /** Verhörer, der sich eindeutig auflösen lässt (genau eine fast gleich geschriebene Straße im Zustellgebiet) → korrigierte Zeile. */
   function streetAuto(query) {
     if (!streets || !area.size) return null;
@@ -567,20 +600,12 @@
   let addr = null;
   try { addr = JSON.parse(localStorage.getItem(ADDR_KEY) || 'null'); } catch (_) {}
   const addrCount = () => addr ? { n: addr.n, ts: addr.ts } : null;
-  async function loadAddresses(depot, force) {
+  async function loadAddresses(depot, force, radius = STREET_RADIUS) {
     if (!depot) return null;
-    if (!force && addr && haversine(depot.lat, depot.lon, addr.lat, addr.lon) < 1500 && Date.now() - addr.ts < 30 * 864e5) return addrCount();
+    if (!force && addr && haversine(depot.lat, depot.lon, addr.lat, addr.lon) < 1500 && (addr.r || STREET_RADIUS) === radius && Date.now() - addr.ts < 30 * 864e5) return addrCount();
     const la = depot.lat.toFixed(5), lo = depot.lon.toFixed(5);
-    const q = `[out:csv("addr:street","addr:housenumber",::lat,::lon,"addr:city","addr:postcode";false;"|")][timeout:90];nwr["addr:housenumber"]["addr:street"](around:${STREET_RADIUS},${la},${lo});out center qt;`;
-    let text = null;
-    for (const url of [...OVERPASS, 'https://overpass.private.coffee/api/interpreter']) {
-      try {
-        const r = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(120000) });
-        if (!r.ok) continue;
-        const t = await r.text();
-        if (/\|\d/.test(t)) { text = t; break; }
-      } catch (_) {}
-    }
+    const q = `[out:csv("addr:street","addr:housenumber",::lat,::lon,"addr:city","addr:postcode";false;"|")][timeout:90];nwr["addr:housenumber"]["addr:street"](around:${radius},${la},${lo});out center qt;`;
+    const text = await overpassText(q, t => /\|\d/.test(t));
     if (!text) throw new Error('Adressen nicht erreichbar');
     const cities = [], ci = new Map(), map = {};
     let n = 0;
@@ -593,7 +618,7 @@
       (map[k] = map[k] || { n: st, a: [] }).a.push([hn.toLowerCase().replace(/\s/g, ''), +(+lat).toFixed(5), +(+lon).toFixed(5), ci.get(c)]);
       n++;
     });
-    addr = { lat: depot.lat, lon: depot.lon, ts: Date.now(), n, cities, map };
+    addr = { lat: depot.lat, lon: depot.lon, r: radius, ts: Date.now(), n, cities, map };
     try { localStorage.setItem(ADDR_KEY, JSON.stringify(addr)); } catch (_) { try { localStorage.removeItem(ADDR_KEY); } catch (__) {} }
     return addrCount();
   }
@@ -619,6 +644,13 @@
     return { lat: best[1], lon: best[2], label: `${e.n} ${parsed.housenumber}, ${pc ? pc[0] + ' ' : ''}${place}`, approx: false, city: place, postcode: pc ? pc[0] : '' };
   }
 
+  /** Orte, in denen es diese Straße MIT dieser Hausnummer gibt (aus dem Offline-Verzeichnis) */
+  function addrPlaces(query) {
+    if (!addr) return null;
+    const parsed = parseQuery(query), e = addr.map[norm(parsed.street)];
+    if (!e || !parsed.housenumber) return null;
+    return [...new Set(e.a.filter(a => a[0] === parsed.housenumber).map(a => placeAt(a[1], a[2])).filter(Boolean))];
+  }
   const hasPlaceIn = q => /,/.test(q) || /\b\d{5}\b/.test(q);
 
   async function reverse(lat, lon) {
@@ -690,5 +722,5 @@
     }
   }
 
-  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetAuto, similarStreets, loadAddresses, addrCount, addrLookup, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
+  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetNames: () => streets ? streets.list.map(x => ({ n: x.n, p: x.p, a: inArea(x) })).sort((a, b) => b.a - a.a) : [], streetAuto, similarStreets, streetPlaces, placesInCircle, streetsCover, loadAddresses, addrCount, addrLookup, addrPlaces, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
 })();

@@ -50,3 +50,14 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Fehler behoben: Straßenverzeichnis brach nach 20 s ab, der Dienst braucht aber ~35 s.
 - Kartenstil selbst wählen (Liste statt Durchschalten), gesehene Kartenkacheln bleiben gespeichert.
 - Eigener Standort mit Blickrichtung: Pfeil, gelber Lieferwagen oder Punkt.
+
+## Version 6
+
+- Neues Design: Schrift Plus Jakarta Sans, kühle Blau-/Navy-Töne, Verläufe; das Blau bleibt.
+- Gebiet auf der Karte wählen (Mittelpunkt + Radius): Orte im Kreis, Straßen, Hausnummern und Karte offline speichern (max. 250 Kacheln ab Zoom 13, nach den OSM-Nutzungsregeln).
+- Gleichnamige Straßen: eindeutige Fälle (Hausnummer nur in einem Ort, nur einer im Gebiet) automatisch, sonst einmal fragen und merken.
+- „Hauptstraße 5 - 3“ / „5-3“ = 3 Pakete.
+- Karten-Knopf „Stopp“: Mitzoomen zum nächsten Stopp, getrennt für kleine Karte und Vollbild.
+- „Geschafft!“-Bildschirm am Ende, Knopf „Ende“ statt Stopp-Quadrat, kleine wegwischbare Rückgängig-Blase.
+- Optional: Gemini-KI (kostenloser Schlüssel) zum Zerlegen diktierter Sätze.
+- Fehler behoben: Absturz beim Neuöffnen während einer Tour; Overpass-Abfragen mit Wiederholung und parallelen Ersatzservern.

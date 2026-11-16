@@ -22,6 +22,7 @@
   } catch (_) {}
   let stops = load('tp.stops', []);
   let route = load('tp.route', null);
+  if (route) delete route._sum;                     // Altlast aus Version 4/5
   let history_ = load('tp.history', []);
   const persist = () => { save('tp.settings', settings); save('tp.stops', stops); save('tp.route', route); };
 
@@ -53,7 +54,7 @@
   function applyTheme() {
     const root = document.documentElement;
     if (settings.theme === 'auto') root.removeAttribute('data-theme'); else root.dataset.theme = settings.theme;
-    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute('content', isDark() ? '#17181A' : '#F6F5F1'));
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute('content', isDark() ? '#080E19' : '#EDF1F6'));
     Map_.setTiles();
   }
   mqDark.addEventListener('change', applyTheme);
@@ -62,13 +63,26 @@
   let toastT;
   function toast(msg, ms = 2600, action) {
     const t = $('#toast'), btn = $('#toast-act');
-    $('#toast-msg').textContent = msg;
+    $('#toast-msg').textContent = msg; $('#toast-msg').hidden = !msg;
+    t.style.transform = ''; t.style.opacity = '';
     btn.hidden = !action;
     if (action) { btn.textContent = action.label; btn.onclick = () => { t.classList.remove('show'); action.run(); }; }
     t.classList.toggle('has-act', !!action);
     t.classList.add('show');
     clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), action ? 6000 : ms);
   }
+
+  // Hinweis-Blase wegwischen
+  (function () {
+    const t = $('#toast'); let x0 = null, dx = 0;
+    t.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; x0 = e.clientX; dx = 0; t.style.transition = 'none'; });
+    addEventListener('pointermove', e => { if (x0 == null) return; dx = e.clientX - x0; t.style.transform = `translate(calc(-50% + ${dx}px), 0)`; t.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / 160)); });
+    addEventListener('pointerup', () => {
+      if (x0 == null) return; x0 = null; t.style.transition = '';
+      if (Math.abs(dx) > 60) { t.classList.remove('show'); clearTimeout(toastT); setTimeout(() => { t.style.transform = ''; t.style.opacity = ''; }, 250); }
+      else { t.style.transform = ''; t.style.opacity = ''; }
+    });
+  })();
 
   /* ---------- Töne & Vibration ---------- */
   const Sfx = {
@@ -310,7 +324,7 @@
       const st = MAP_STYLES[mapStyle()], dark = isDark();
       // Standard-OSM wird im Dunkelmodus per CSS-Filter abgedunkelt, die anderen Stile haben eigene dunkle Kacheln
       $('#map').classList.toggle('no-filter', !st.filter);
-      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(this.map);
+      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, maxNativeZoom: !navigator.onLine && settings.region && settings.region.z && settings.region.style === mapStyle() ? settings.region.z : 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(this.map);
     },
     cycleStyle() {
       const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
@@ -350,12 +364,15 @@
       this.pin(depot, HOME_ICON, 'depot').bindTooltip(esc(depot.name)).addTo(this.layers);
       this.renderPois();
       // nur neu einpassen, wenn sich die Punkte geändert haben – nicht bei jedem Haken
-      const key = (route ? route.order.join() : stops.filter(s => s.status === 'ok').map(s => s.id).join()) + '|' + depot.lat;
+      const key = (route ? route.order.join() : stops.filter(s => s.status === 'ok').map(s => s.id).join()) + '|' + depot.lat + '|' + this.zoomOn();
+      $('#map-zoom').classList.toggle('on', this.zoomOn()); $('#map-zoom').hidden = !route;
       if (key === this.lastFit && !refit) return;
       this.lastFit = key;
       setTimeout(() => {
         m.invalidateSize();
-        if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
+        const nx = this.nextStop();
+        if (nx) m.setView([nx.lat, nx.lon], 16);
+        else if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
       }, 50);
     },
     renderPois() {
@@ -372,6 +389,15 @@
       const open = list.filter(p => Pois.state(p).open !== false).length;
       chip.innerHTML = `${MAIL_ICON}<span><b>${list.length}</b> Paketstelle${list.length > 1 ? 'n' : ''} an der Route${open < list.length ? ` · ${open} offen` : ''}</span>`;
       chip.hidden = false;
+    },
+    // Mitzoomen zum nächsten Stopp – für Vollbild und kleine Karte getrennt ein-/ausschaltbar
+    zoomOn() { return this.full || wide() ? settings.zoomFull !== false : !!settings.zoomSmall; },
+    nextStop() { const cur = currentIndex(); return route && cur !== -1 && this.zoomOn() ? stopById(route.order[cur]) : null; },
+    toggleZoom() {
+      const k = this.full || wide() ? 'zoomFull' : 'zoomSmall';
+      settings[k] = !this.zoomOn(); persist();
+      toast(this.zoomOn() ? 'Karte folgt dem nächsten Stopp' : 'Karte zeigt die ganze Tour');
+      this.lastFit = ''; this.render(true);
     },
     flyTo(p, zoom = 16, duration = .6) { if (this.map) this.map.flyTo([p.lat, p.lon], zoom, { duration }); },
     visible() { return this.map && (this.full || wide() || (!$('#result').hidden && $('#map-wrap').getBoundingClientRect().bottom > 0)); },
@@ -410,9 +436,6 @@
       setTimeout(() => {
         if (!this.map) return;
         this.map.invalidateSize(); this.lastFit = ''; this.render();
-        // Vollbild = Fahrmodus: direkt zum nächsten Stopp; zurück = wieder die ganze Tour
-        const cur = currentIndex();
-        if (on && route && cur !== -1) setTimeout(() => this.flyTo(stopById(route.order[cur]), 16, 1), 350);
         if (on) Me.auto();
       }, 60);
     },
@@ -428,6 +451,8 @@
   $('#map-full').onclick = () => Map_.setFull(true);
   $('#map-close').onclick = () => Map_.setFull(false);
   $('#map-layers').onclick = openLayerSheet;
+  addEventListener('online', () => Map_.setTiles()); addEventListener('offline', () => Map_.setTiles());
+  $('#map-zoom').onclick = () => Map_.toggleZoom();
   $('#map-locate').onclick = () => Me.start(true);
 
   /* ---------- Eigener Standort mit Blickrichtung (Pfeil, Lieferwagen oder Punkt) ---------- */
@@ -562,15 +587,28 @@
       let fixedFrom = null;
       const auto = !picked.has(query) && Geo.streetAuto(query);          // eindeutiger Verhörer im Zustellgebiet → gleich richtig schreiben
       if (auto) { fixedFrom = query; query = auto; }
-      if (!Geo.hasPlaceIn(query)) {                 // Ort aus gewähltem Vorschlag oder Straßenverzeichnis ergänzen
+      let ask = null;
+      if (!Geo.hasPlaceIn(query)) {                 // Ort aus Auswahl, Gelerntem oder Straßenverzeichnis ergänzen
         const key = Geo.norm(Geo.parseQuery(query).street);
         const st = Geo.streetLookup(query, settings.depot);
-        const place = pickedPlace.get(key) || (st && st.sure ? st.p : '');
+        const place = pickedPlace.get(key) || (settings.learn || {})[key] || (st && st.sure ? st.p : '');
         if (place) query += ', ' + place;
+        else {                                      // Straße gibt es in mehreren Orten → einmal fragen, dann merken
+          const pl = Geo.streetPlaces(query, settings.depot);
+          if (pl.length > 1) {
+            const withNo = Geo.addrPlaces(query);   // Hausnummer gibt es nur in einem davon → ohne Frage nehmen
+            const f = withNo && withNo.length ? pl.filter(p => withNo.includes(p.place)) : pl;
+            const home = f.filter(p => p.inArea);
+            if (f.length === 1) query += ', ' + f[0].place;
+            else if (home.length === 1) query += ', ' + home[0].place;          // nur eine davon im Zustellgebiet → die
+            else ask = (home.length > 1 ? home : f).slice(0, 5);
+          }
+        }
       }
       const ex = known.get(query.toLowerCase());
       if (ex) { if (pk) ex.pk = (ex.pk || 0) + pk; continue; }      // gleiche Adresse: Pakete zusammenzählen
-      const s = { id: uid(), query, pk, status: 'pending' };
+      const s = { id: uid(), query, pk, status: ask ? 'ask' : 'pending' };
+      if (ask) s.ask = ask;
       if (fixedFrom) s.fixedFrom = fixedFrom;
       const hit = picked.get(query);
       if (hit) { Object.assign(s, { status: 'ok', label: hit.label, lat: hit.lat, lon: hit.lon, approx: false }); Geo.remember(query, settings.depot, hit); }
@@ -579,6 +617,14 @@
     }
     persist(); renderStops(); Map_.render(); runGeocoding();
     return added;
+  }
+
+  /** Merken, in welchem Ort eine Straße gemeint ist (bei gleichnamigen Straßen) */
+  function learnPlace(query) {
+    const p = Geo.parseQuery(query); if (!p.city || !p.street) return;
+    const places = Geo.streetPlaces(query, settings.depot).map(x => x.place);
+    const city = places.find(x => Geo.norm(x) === Geo.norm(p.city.replace(/^\d{5}\s*/, '')));
+    if (places.length > 1 && city) { settings.learn = Object.assign({}, settings.learn, { [Geo.norm(p.street)]: city }); persist(); }
   }
 
   /** Adresse suchen. Das Straßenverzeichnis prüft den Treffer, springt ein, wenn der Dienst nichts findet,
@@ -710,7 +756,7 @@
         const q = parsed.query || s.query;
         s.pk = parsed.pk || pk || null;
         if (q !== s.query || hit) {
-          s.query = q;
+          s.query = q; delete s.ask; learnPlace(q);
           if (hit) { Object.assign(s, { status: 'ok', label: hit.label, lat: hit.lat, lon: hit.lon, approx: false }); Geo.remember(q, settings.depot, hit); }
           else Object.assign(s, { status: 'pending', label: '', approx: false });
           persist();
@@ -736,6 +782,7 @@
       const cls = s.status === 'ok' ? 'ok' : s.status;
       const state = s.status === 'ok' ? ICON.ok : s.status === 'err' ? ICON.warn : '';
       const sub = s.status === 'ok' ? esc(s.label) + (s.approx ? ' · Hausnr. ungefähr' : '') + (s.outside ? ` <span class="tag-out">außerhalb</span>` : '') + (s.fixedFrom ? `<br><span class="fixed-note">korrigiert aus „${esc(s.fixedFrom)}“</span>` : '')
+        : s.status === 'ask' ? 'Diese Straße gibt es mehrmals – welcher Ort?'
         : s.status === 'err' ? (s.alts ? 'Straße unbekannt – meintest du:' : 'Nicht gefunden – antippen und Ort ergänzen') : 'Suche …';
       if (editingId === s.id) return `<li class="stop editing" data-id="${s.id}">${editorHtml(s)}</li>`;
       return `<li class="stop swipe ${cls}${newCls(s.id)}" data-id="${s.id}">
@@ -746,6 +793,7 @@
           ${pkPill(s)}
           <div class="acts"><button data-act="edit" aria-label="Bearbeiten">${ICON.edit}</button><button data-act="del" aria-label="Löschen">${ICON.del}</button></div>
         </div>
+        ${s.status === 'ask' ? `<div class="alts ask">${s.ask.map(a => `<button data-ask="${esc(a.place)}">${esc(a.place)}${a.inArea ? '' : ' <small>außerhalb</small>'}</button>`).join('')}</div>` : ''}
         ${s.status === 'ok' && s.outside ? `<div class="alts"><button data-area-add="${esc(s.outside)}">${esc(s.outside)} gehört zu meinem Gebiet</button></div>` : ''}
         ${s.status === 'err' && s.alts ? `<div class="alts">${s.alts.map((a, i) => `<button data-alt="${i}">${esc(a)}</button>`).join('')}</div>` : ''}
       </li>`;
@@ -770,7 +818,7 @@
     const after = () => { persist(); if (route) return plan(false); renderStops(); Map_.render(); };
     if (route) { route.order = route.order.filter(x => x !== id); delete route.done[id]; }
     after();
-    toast(`„${s.query}“ gelöscht`, 6000, { label: 'Rückgängig', run() {
+    toast('', 5000, { label: '↶ Rückgängig', run() {
       stops.splice(Math.min(idx, stops.length), 0, s);
       if (route && backup) { route.order = backup.order.filter(x => stopById(x)); route.done = backup.done; }
       after();
@@ -780,12 +828,22 @@
   $('#stop-list').addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
     const li = e.target.closest('.stop'); if (!li || li.classList.contains('editing')) return;
+    const ak = e.target.closest('[data-ask]');
+    if (ak) {                                         // Ort gewählt → übernehmen und für diese Straße merken
+      const s = stopById(li.dataset.id), key = Geo.norm(Geo.parseQuery(s.query).street);
+      settings.learn = Object.assign({}, settings.learn, { [key]: ak.dataset.ask });
+      // gleiche Straße in anderen offenen Fragen gleich mit beantworten
+      stops.forEach(x => { if (x.status === 'ask' && Geo.norm(Geo.parseQuery(x.query).street) === key) { x.query += ', ' + ak.dataset.ask; x.status = 'pending'; delete x.ask; } });
+      persist(); renderStops(); runGeocoding();
+      toast(`Gemerkt: ${Geo.parseQuery(s.query).street} → ${ak.dataset.ask}`);
+      return;
+    }
     const aa = e.target.closest('[data-area-add]');
     if (aa) { addToArea(aa.dataset.areaAdd); return; }
     const alt = e.target.closest('[data-alt]');
     if (alt) {                                        // Korrekturvorschlag übernehmen
       const s = stopById(li.dataset.id);
-      Object.assign(s, { query: s.alts[+alt.dataset.alt], status: 'pending', alts: null });
+      Object.assign(s, { query: s.alts[+alt.dataset.alt], status: 'pending', alts: null }); learnPlace(s.query);
       persist(); renderStops(); runGeocoding(); return;
     }
     if (b && b.dataset.act === 'del') return removeStop(li.dataset.id);
@@ -834,9 +892,22 @@
   enableSwipe($('#route-list'), { onLeft: removeStop, onRight: id => toggleDone(id) });
 
   /* ---------- Eingabe & Diktat ---------- */
-  function submitInput() {
+  /** Text → Adresszeilen: mit Gemini-Schlüssel per KI, sonst (oder bei Fehler) mit der eigenen Erkennung */
+  let aiBusy = false;
+  async function toLines(raw, busyEl) {
+    if (!settings.aiKey || !raw.trim() || !window.AI) return parseText(raw);
+    aiBusy = true; if (busyEl) busyEl.classList.add('loading');
+    try {
+      const lines = await AI.parse(raw, settings.aiKey, Geo.streetNames());
+      if (lines.length) return lines;
+    } catch (e) { toast('KI gerade nicht erreichbar – normale Erkennung', 3000); }
+    finally { aiBusy = false; if (busyEl) busyEl.classList.remove('loading'); }
+    return parseText(raw);
+  }
+  async function submitInput() {
+    if (aiBusy) return;
     const raw = $('#addr-input').value;
-    const lines = parseText(raw);
+    const lines = await toLines(raw, $('#add-btn'));
     if (!lines.length) return toast('Bitte mindestens eine Adresse eingeben');
     const n = addAddresses(lines);
     $('#addr-input').value = ''; $('#addr-suggest').hidden = true;
@@ -939,14 +1010,20 @@
   })();
 
   /* ---------- Schnell-Eingabe über das Mikrofon oben ---------- */
-  function quickSubmit() {
-    const ta = $('#q-input'), lines = parseText(ta.value);
+  async function quickSubmit() {
+    if (aiBusy) return;
+    const ta = $('#q-input');
+    if (settings.aiKey && ta.value.trim()) $('#q-state').textContent = 'KI sortiert die Adressen …';
+    const lines = await toLines(ta.value, $('#q-add'));
+    $('#q-state').textContent = dict.active ? 'Ich höre zu … zum Beenden antippen' : 'Antippen und sprechen';
     if (!lines.length) return;
     const before = new Set(stops.map(s => s.id));
     addAddresses(lines);
     ta.value = ''; $('#q-suggest').hidden = true;
     const added = stops.filter(s => !before.has(s.id));
     $('#q-added').insertAdjacentHTML('afterbegin', added.map(s => {
+      if (s.status === 'ask') return `<li data-qid="${s.id}">${ICON.warn}<span>${esc(s.query)}<small>gibt es mehrmals – welcher Ort?</small></span>${pkPill(s)}
+        <div class="sim-list q">${s.ask.map(a => `<button type="button" data-qask="${esc(a.place)}"><b>${esc(a.place)}</b><span>${a.inArea ? 'dein Gebiet' : 'außerhalb'}</span></button>`).join('')}</div></li>`;
       const known = Geo.streetLookup(s.query, settings.depot) || Geo.addrLookup(s.query, settings.depot);
       const sim = known ? [] : Geo.similarStreets(s.fixedFrom || s.query, settings.depot, 4).filter(x => !x.exact);
       return `<li data-qid="${s.id}">${known ? ICON.check : ICON.warn}<span>${esc(s.query)}${s.fixedFrom ? `<small class="fixed-note">korrigiert aus „${esc(s.fixedFrom)}“</small>` : ''}</span>${pkPill(s)}
@@ -969,10 +1046,20 @@
   }
   $('#top-mic').onclick = openQuick;
   $('#q-added').addEventListener('click', e => {
+    const qa = e.target.closest('[data-qask]');
+    if (qa) {
+      const li = qa.closest('li'), s = stopById(li.dataset.qid); if (!s) return;
+      const key = Geo.norm(Geo.parseQuery(s.query).street);
+      settings.learn = Object.assign({}, settings.learn, { [key]: qa.dataset.qask });
+      stops.forEach(x => { if (x.status === 'ask' && Geo.norm(Geo.parseQuery(x.query).street) === key) { x.query += ', ' + qa.dataset.qask; x.status = 'pending'; delete x.ask; } });
+      persist(); renderStops(); runGeocoding();
+      li.querySelector('span').textContent = s.query; li.querySelector('.sim-list').remove(); li.firstElementChild.outerHTML = ICON.check;
+      return;
+    }
     const b = e.target.closest('[data-qsim]'); if (!b) return;
     const li = b.closest('li'), s = stopById(li.dataset.qid); if (!s) return;
     const line = b.dataset.qsim;
-    Object.assign(s, { query: line, status: 'pending', alts: null, label: '' }); delete s.fixedFrom;
+    Object.assign(s, { query: line, status: 'pending', alts: null, label: '' }); delete s.fixedFrom; delete s.ask; learnPlace(line);
     persist(); renderStops(); runGeocoding();
     li.querySelector('span').textContent = line; li.querySelector('.sim-list').remove();
     li.firstElementChild.outerHTML = ICON.check;
@@ -1081,7 +1168,36 @@
     if (openId === id) openId = null;
     persist(); renderResult(); justDone = null;
     const cur = currentIndex();
-    if (route.done[id] && cur !== -1 && Map_.visible()) setTimeout(() => Map_.flyTo(stopById(route.order[cur]), 16, 1.2), 350);
+    if (route.done[id] && cur !== -1 && Map_.visible() && Map_.zoomOn()) setTimeout(() => Map_.flyTo(stopById(route.order[cur]), 16, 1.2), 350);
+    if (route.done[id] && cur === -1) setTimeout(showDone, 500);
+  }
+
+  /* ---------- Geschafft! ---------- */
+  function showDone() {
+    if (!route || document.querySelector('.done-ov')) return;
+    const ordered = route.order.map(stopById).filter(Boolean), d = settings.depot;
+    const pk = pkCount(ordered), km = route.legs.reduce((a, l) => a + l.dist, 0);
+    const mins = Math.round((Date.now() - route.created) / 60000);
+    const colors = ['#33CCFF', '#0A84D6', '#FFCC00', '#2FD08E', '#FF6B57', '#ffffff'];
+    const conf = Array.from({ length: 36 }, (_, i) => `<i style="left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${(Math.random() * .6).toFixed(2)}s;animation-duration:${(1.8 + Math.random() * 1.4).toFixed(2)}s;transform:rotate(${Math.round(Math.random() * 360)}deg)"></i>`).join('');
+    const el = document.createElement('div');
+    el.className = 'done-ov';
+    el.innerHTML = `<div class="confetti">${conf}</div>
+      <div class="done-card">
+        <div class="done-badge"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+        <h2>Geschafft${settings.name ? ', ' + esc(settings.name) : ''}!</h2>
+        <p>Alle Stopps sind erledigt. Stark gemacht.</p>
+        <div class="done-stats"><div><b>${ordered.length}</b><span>Stopps</span></div><div><b>${pk}</b><span>Pakete</span></div><div><b>${fmtKm(km)}</b><span>Strecke</span></div>${mins > 0 && mins < 1440 ? `<div><b>${fmtDur(mins * 60)}</b><span>unterwegs</span></div>` : ''}</div>
+        ${route.roundtrip ? `<a class="btn primary wide big" href="${navUrl(d)}" target="_blank" rel="noopener">${ICON.nav} Zurück zum Depot</a>` : ''}
+        <button class="btn ${route.roundtrip ? 'ghost' : 'primary'} wide" data-done-act="save">${ICON.flag} Tour beenden &amp; speichern</button>
+        <button class="link" data-done-act="close">Später</button>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => {
+      const b = e.target.closest('[data-done-act]');
+      if (e.target === el || b || e.target.closest('a')) el.remove();
+      if (b && b.dataset.doneAct === 'save') finishTour();
+    });
   }
 
   /** Abschnitte für Google Maps: jeweils höchstens 10 Ziele, ab dem nächsten offenen Stopp */
@@ -1175,7 +1291,8 @@
       </dl>
       ${route.saving > 90 ? `<div class="saving">Die optimierte Reihenfolge spart ${fmtDur(route.saving)} Fahrzeit.</div>` : ''}
       ${route.source !== 'osrm' ? '<div class="saving" style="color:var(--warn)">Routing-Dienst nicht erreichbar – Werte geschätzt (Luftlinie)</div>' : ''}`;
-    route._sum = { n, doneCount, pkTotal, pkDone, endAt, totalDist };
+    // nur für die Anzeige oben – nicht mitspeichern (sonst wird das Datum beim Neuladen zu Text)
+    Object.defineProperty(route, '_sum', { value: { n, doneCount, pkTotal, pkDone, endAt, totalDist }, enumerable: false, configurable: true, writable: true });
 
     // Liste
     const rows = [`<li class="depot"><div class="row-main"><span class="num">${HOME_ICON}</span><div class="txt"><div class="q">${esc(d.name)}</div><div class="meta">Start · ${esc(d.label)}</div></div></div></li>`];
@@ -1407,7 +1524,7 @@
     $('#tour-stop').hidden = !route;
     if (route && route._sum) {
       const { n, doneCount, pkTotal, pkDone, endAt } = route._sum;
-      $('#ts-text').innerHTML = `<span>${ICON.flag}<b>${doneCount}/${n}</b> Stopps</span><span>${ICON.box}<b>${pkTotal - pkDone}</b> Pakete übrig</span><span>${ICON.home}fertig ca. <b>${fmtTime(endAt)}</b></span>`;
+      $('#ts-text').innerHTML = `<span>${ICON.flag}<b>${doneCount}/${n}</b> Stopps</span><span>${ICON.box}<b>${pkTotal - pkDone}</b> Pakete übrig</span><span>${ICON.home}fertig ca. <b>${fmtTime(new Date(endAt))}</b></span>`;
       $('#ts-fill').style.width = (n ? doneCount / n * 100 : 0) + '%';
       strip.hidden = false;
     } else if (stops.length) {
@@ -1478,12 +1595,13 @@
   async function loadIndex(force) {
     if (!settings.depot || indexState === 'loading' || indexState === 'addr') return;
     indexState = 'loading'; renderIndexInfo(); renderGreeting();
-    try { await Geo.loadStreets(settings.depot, force); indexState = ''; }
+    const C = regionCenter(), R = regionR();
+    try { await Geo.loadStreets(C, force, R); indexState = ''; }
     catch (_) { indexState = 'error'; }
     applyArea(); renderAreaCard(); renderStops();
     if (indexState !== 'error') {
       indexState = 'addr'; renderIndexInfo(); renderGreeting();
-      try { await Geo.loadAddresses(settings.depot, force); indexState = ''; }
+      try { await Geo.loadAddresses(C, force, R); indexState = ''; }
       catch (_) { indexState = 'addr-error'; }
       // schon eingetragene, nur ungefähr gefundene Adressen jetzt exakt setzen
       let better = 0;
@@ -1502,6 +1620,124 @@
     $('#s-index-load').onclick = () => loadIndex(true);
   }
 
+
+  const regionCenter = () => settings.region ? { lat: settings.region.lat, lon: settings.region.lon } : settings.depot;
+  const regionR = () => settings.region ? settings.region.r : 12000;
+
+  /* ---------- Gebiet auf der Karte wählen (Mittelpunkt + Radius) ---------- */
+  const lon2x = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
+  const lat2y = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
+  const x2lon = (x, z) => x / 2 ** z * 360 - 180;
+  const y2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / 2 ** z; return 180 / Math.PI * Math.atan(.5 * (Math.exp(n) - Math.exp(-n))); };
+  function tilesFor(lat, lon, rM, z) {
+    const dLat = rM / 111320, dLon = rM / (111320 * Math.cos(lat * Math.PI / 180)), out = [];
+    const x0 = lon2x(lon - dLon, z), x1 = lon2x(lon + dLon, z), y0 = lat2y(lat + dLat, z), y1 = lat2y(lat - dLat, z);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const cLat = y2lat(y + .5, z), cLon = x2lon(x + .5, z);
+      const half = Geo.haversine(y2lat(y, z), x2lon(x, z), cLat, cLon);
+      if (Geo.haversine(lat, lon, cLat, cLon) <= rM + half) out.push([z, x, y]);
+    }
+    return out;
+  }
+  // Fair gegenüber den freien Kartendiensten: höchstens 250 Kacheln ab Zoomstufe 13 (Nutzungsregeln von OpenStreetMap)
+  function tilePlan(lat, lon, rM) {
+    let list = tilesFor(lat, lon, rM, 10).concat(tilesFor(lat, lon, rM, 11), tilesFor(lat, lon, rM, 12)), maxZ = 12, big = 0;
+    for (let z = 13; z <= 16; z++) {
+      const t = tilesFor(lat, lon, rM, z);
+      if (big + t.length > 250) break;
+      big += t.length; list = list.concat(t); maxZ = z;
+    }
+    return { list, maxZ };
+  }
+  const OFFLINE_STYLES = ['de', 'hot', 'osm', 'sat'];
+  const tileUrl = (st, [z, x, y]) => MAP_STYLES[st].url.replace('{s}', 'a').replace('{r}', '').replace('{z}', z).replace('{x}', x).replace('{y}', y);
+
+  const Region = {
+    map: null, circle: null, r: 8,
+    open() {
+      if (!window.L) return;
+      $('#region').hidden = false; document.body.classList.add('map-full');
+      const c = settings.region || settings.depot;
+      this.r = settings.region ? Math.round(settings.region.r / 1000) : 8;
+      $('#rg-range').value = this.r;
+      if (!this.map) {
+        this.map = L.map($('#region-map'), { zoomControl: false });
+        this.map.on('move', () => this.update());
+        this.map.on('moveend', () => this.update(true));
+      }
+      if (this.tiles) this.tiles.remove();
+      const st = MAP_STYLES[mapStyle()];
+      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(isDark()) : st.url, { maxZoom: 19, subdomains: 'abc', attribution: st.attr }).addTo(this.map);
+      $('#region-map').classList.toggle('no-filter', !st.filter);
+      setTimeout(() => { this.map.invalidateSize(); this.map.setView([c.lat, c.lon], this.zoomFor()); this.update(true); }, 30);
+      $('#rg-status').textContent = ''; $('#rg-progress').hidden = true; $('#rg-save').disabled = false;
+    },
+    close() { $('#region').hidden = true; document.body.classList.remove('map-full'); },
+    zoomFor() { return Math.max(8, Math.min(14, Math.round(Math.log2(40000 / this.r)) + 3)); },
+    update(full) {
+      if (!this.map) return;
+      const c = this.map.getCenter(), rM = this.r * 1000;
+      if (!this.circle) this.circle = L.circle(c, { radius: rM, color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), weight: 2.5, fillOpacity: .08, interactive: false }).addTo(this.map);
+      else this.circle.setLatLng(c).setRadius(rM);
+      $('#rg-r').textContent = this.r + ' km';
+      if (!full) return;
+      const covered = Geo.streetsCover(c.lat, c.lng, rM);
+      const pl = covered ? Geo.placesInCircle(c.lat, c.lng, rM) : [];
+      const sel = new Set(settings.area || []);
+      $('#rg-places').innerHTML = covered
+        ? (pl.length ? `<small>${pl.length} Orte im Kreis – antippen zum Abwählen</small><div class="area-chips">${pl.map(p => `<button type="button" data-place="${esc(p.name)}" aria-pressed="${!settings.area || sel.has(p.name) || !settings.region ? 'true' : 'false'}">${esc(p.name)}<small>${p.count} Str.</small></button>`).join('')}</div>` : '<small>Keine Orte im Kreis.</small>')
+        : '<small>Die Orte in diesem Kreis werden beim Speichern geladen.</small>';
+      const ok = OFFLINE_STYLES.includes(mapStyle());
+      const plan = tilePlan(c.lat, c.lng, rM);
+      $('#rg-tiles').disabled = !ok;
+      $('#rg-tiles-info').textContent = ok ? `${plan.list.length} Kartenteile, ca. ${Math.max(1, Math.round(plan.list.length * 18 / 1024))} MB · Details bis Zoomstufe ${plan.maxZ}${plan.maxZ < 15 ? ' (kleinerer Kreis = mehr Details)' : ''}` : 'Für den TomTom-Stil nicht möglich – anderen Kartenstil wählen';
+    },
+    async save() {
+      const c = this.map.getCenter(), rM = this.r * 1000;
+      const chips = [...$('#rg-places').querySelectorAll('[data-place]')];
+      const chosen = chips.length ? chips.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.place) : null;
+      settings.region = { lat: +c.lat.toFixed(5), lon: +c.lng.toFixed(5), r: rM };
+      persist();
+      $('#rg-save').disabled = true; $('#rg-progress').hidden = false;
+      const bar = f => { $('#rg-bar').style.width = Math.round(f * 100) + '%'; };
+      $('#rg-status').textContent = 'Straßen und Hausnummern werden geladen … (bis zu 2 Minuten)'; bar(.05);
+      await loadIndex(true);
+      // Gebiet = gewählte Orte, sonst alle Orte im Kreis
+      const inCircle = Geo.placesInCircle(c.lat, c.lng, rM).map(p => p.name);
+      settings.area = chosen && chosen.length ? chosen : inCircle; settings.areaAuto = false; settings.areaOk = true;
+      applyArea(); renderAreaCard(); renderStops();
+      bar(.4);
+      if ($('#rg-tiles').checked && OFFLINE_STYLES.includes(mapStyle())) {
+        const plan = tilePlan(c.lat, c.lng, rM), st = mapStyle();
+        try { await caches.delete('tourplan-offline'); } catch (_) {}
+        const cache = await caches.open('tourplan-offline');
+        let done = 0, i = 0;
+        const worker = async () => {
+          while (i < plan.list.length) {
+            const url = tileUrl(st, plan.list[i++]);
+            try { const r = await fetch(url, { mode: 'no-cors' }); await cache.put(url, r); } catch (_) {}
+            done++; bar(.4 + .6 * done / plan.list.length);
+            $('#rg-status').textContent = `Karte wird gespeichert … ${done} von ${plan.list.length}`;
+          }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        settings.region.z = plan.maxZ; settings.region.style = st; persist();
+      }
+      bar(1);
+      const a = Geo.addrCount(), sc = Geo.streetCount();
+      const failed = indexState === 'error' || indexState === 'addr-error';
+      $('#rg-status').textContent = failed
+        ? `Der Kartendienst für Straßen ist gerade überlastet – bisherige Daten bleiben (${sc ? sc.streets : 0} Straßen). Später in den Einstellungen „Aktualisieren“ tippen.${settings.region.z ? ' Karte ist gespeichert.' : ''}`
+        : `Fertig: ${sc ? sc.streets : 0} Straßen, ${a ? a.n.toLocaleString('de-DE') : 0} Hausnummern${settings.region.z ? ', Karte bis Zoomstufe ' + settings.region.z : ''} gespeichert.`;
+      $('#rg-save').disabled = false;
+      toast(failed ? 'Gebiet gespeichert – Straßen später aktualisieren' : 'Gebiet gespeichert');
+      setTimeout(() => this.close(), failed ? 5000 : 1600);
+    },
+  };
+  $('#rg-range').addEventListener('input', e => { Region.r = +e.target.value; Region.update(); clearTimeout(Region.t); Region.t = setTimeout(() => Region.update(true), 250); });
+  $('#rg-close').onclick = () => Region.close();
+  $('#rg-save').onclick = () => Region.save();
+  $('#rg-places').addEventListener('click', e => { const b = e.target.closest('[data-place]'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); });
 
   /* ---------- Zustellgebiet ---------- */
   function defaultArea() {                    // Ort des Depots plus Orte, die sehr nah dran liegen
@@ -1571,6 +1807,7 @@
     $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
     renderAreaChips($('#s-area'));
     $('#s-tomtom').value = settings.tomtom || '';
+    $('#s-ai-key').value = settings.aiKey || '';
     renderIndexInfo();
     $('#settings').hidden = false;
   }
@@ -1580,7 +1817,7 @@
   $('#settings').addEventListener('click', e => { if (e.target.id === 'settings') closeSettings(); });
   addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    if (!$('#quick').hidden) closeQuick(); else if (!$('#sheet').hidden) closeSheet(); else if (!$('#settings').hidden) closeSettings(); else if (Map_.full) Map_.setFull(false);
+    if (!$('#region').hidden) Region.close(); else if (!$('#quick').hidden) closeQuick(); else if (!$('#sheet').hidden) closeSheet(); else if (!$('#settings').hidden) closeSettings(); else if (Map_.full) Map_.setFull(false);
   });
   $('#s-depot-addr').addEventListener('input', () => { pendingDepot = null; $('#s-depot-result').hidden = true; });
   attachSuggest($('#s-depot-addr'), $('#s-suggest'), () => settings.depot, r => { if (!r.exact) return; pendingDepot = r; showDepotResult($('#s-depot-result'), r, 'Ausgewählt'); });
@@ -1607,6 +1844,7 @@
     settings.stopMin = Math.max(0, Math.min(30, +$('#s-stopmin').value || 0));
     if ($('#s-area [data-place]')) { const a = readAreaChips($('#s-area')); settings.area = a; settings.areaAuto = false; settings.areaOk = true; }
     settings.tomtom = $('#s-tomtom').value.trim();
+    settings.aiKey = $('#s-ai-key').value.trim();
     Geo.setKeys({ tomtom: settings.tomtom });
     applyArea(); Map_.setTiles(); renderAreaCard();
     persist(); closeSettings(); renderStops(); renderResult();
@@ -1615,6 +1853,14 @@
     else { toast('Gespeichert'); Pois.key = ''; Pois.refresh(); }
   };
   $('#s-transfer').onclick = shareSetup;
+  $('#s-region').onclick = () => { closeSettings(); Region.open(); };
+  $('#s-ai-test').onclick = async () => {
+    const k = $('#s-ai-key').value.trim(), note = $('#s-ai-note');
+    if (!k) { note.textContent = 'Erst einen Schlüssel eintragen.'; return; }
+    note.textContent = 'Teste …';
+    try { const m = await AI.test(k); note.textContent = `✓ Schlüssel funktioniert (${m}). Mit „Speichern“ übernehmen.`; }
+    catch (e) { note.textContent = 'Schlüssel wird nicht angenommen: ' + e.message; }
+  };
   $('#s-tomtom-test').onclick = async () => {
     const k = $('#s-tomtom').value.trim(), note = $('#s-tomtom-note');
     if (!k) { note.textContent = 'Erst einen Schlüssel eintragen.'; return; }

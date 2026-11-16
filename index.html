@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Tourplan</title>
   <meta name="description" content="Zustelltour planen: Adressen eingeben oder diktieren, Route optimieren, mit Waze oder Google Maps losfahren.">
-  <meta name="theme-color" content="#F6F5F1" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#17181A" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#EDF1F6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#080E19" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="Tourplan">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
@@ -88,8 +88,9 @@
         <button class="btn icon top-mic" id="top-mic" aria-label="Adressen hinzufügen (sprechen oder tippen)">
           <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
         </button>
-        <button class="btn ghost icon" id="tour-stop" aria-label="Tour beenden oder abbrechen" hidden>
-          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+        <button class="end-pill" id="tour-stop" aria-label="Tour beenden oder abbrechen" hidden>
+          <svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2.5 4L17 12H5"/></svg>
+          <span>Ende</span>
         </button>
         <button class="btn ghost icon" id="history-open" aria-label="Verlauf">
           <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
@@ -172,6 +173,7 @@
             <button class="map-fab close" id="map-close" aria-label="Vollbild schließen" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
             <button class="map-fab full" id="map-full" aria-label="Vollbild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+            <button class="map-fab zoomstop" id="map-zoom" aria-label="Zum nächsten Stopp zoomen an/aus"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Stopp</span></button>
             <button class="map-fab layers" id="map-layers" aria-label="Kartenstil wechseln"><svg viewBox="0 0 24 24"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 16.5 9.5 5 9.5-5" opacity=".5"/></svg></button>
             <button class="poi-chip" id="poi-chip" hidden></button>
             <div class="map-bar" id="map-bar" hidden></div>
@@ -209,6 +211,7 @@
       <h3 class="mini">Zustellgebiet</h3>
       <p class="sheet-note" id="s-area-note">Tippe die Orte an, in denen du zustellst. Straßen dort werden bevorzugt vorgeschlagen, Adressen außerhalb werden markiert.</p>
       <div class="area-chips" id="s-area"></div>
+      <button class="menu-item" id="s-region" style="margin-top:12px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg><span><b>Gebiet auf der Karte wählen</b><small>Mittelpunkt und Radius festlegen · Straßen, Hausnummern und Karte offline speichern</small></span></button>
       <label class="switch">
         <input type="checkbox" id="s-roundtrip">
         <span class="track"><span class="thumb"></span></span>
@@ -236,6 +239,14 @@
         </div>
       </label>
       <p class="sheet-note" id="s-tomtom-note">Mit Schlüssel sucht die App Hausnummern zuerst bei TomTom und bietet die TomTom-Karte an.</p>
+      <h3 class="mini">KI-Texterkennung <em class="opt">optional · kostenlos</em></h3>
+      <label class="field"><span>Gemini-Schlüssel <em>kostenlos auf aistudio.google.com</em></span>
+        <div class="input-row">
+          <input id="s-ai-key" type="text" autocomplete="off" spellcheck="false" placeholder="leer lassen = ohne KI">
+          <button class="btn ghost" id="s-ai-test">Testen</button>
+        </div>
+      </label>
+      <p class="sheet-note" id="s-ai-note">Mit Schlüssel sortiert Googles KI Gemini diktierte Sätze in Straße, Hausnummer, Ort und Pakete – mit den Straßen deines Gebiets. Dafür gehen der Text und die Straßennamen an Google; im kostenlosen Tarif darf Google sie zur Verbesserung nutzen.</p>
       <label class="switch">
         <input type="checkbox" id="s-sound">
         <span class="track"><span class="thumb"></span></span>
@@ -256,6 +267,27 @@
         <button class="btn ghost icon" id="sheet-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <!-- Gebiet auf der Karte wählen -->
+  <div class="region" id="region" hidden>
+    <div id="region-map" class="region-map"></div>
+    <div class="region-center" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" fill="currentColor"/><circle cx="12" cy="10" r="2.4" fill="#fff" stroke="none"/></svg></div>
+    <button class="map-fab rg-close" id="rg-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="region-panel">
+      <div class="rg-head"><h2>Gebiet wählen</h2><span class="rg-r" id="rg-r">8 km</span></div>
+      <p class="tiny">Karte verschieben – die Nadel ist der Mittelpunkt. Mit dem Regler den Umkreis wählen.</p>
+      <input type="range" id="rg-range" min="1" max="20" step="1" value="8" aria-label="Radius in Kilometern">
+      <div class="rg-places" id="rg-places"></div>
+      <label class="switch">
+        <input type="checkbox" id="rg-tiles" checked>
+        <span class="track"><span class="thumb"></span></span>
+        <span>Karte offline speichern<br><small id="rg-tiles-info"></small></span>
+      </label>
+      <div class="rg-progress" id="rg-progress" hidden><span id="rg-bar"></span></div>
+      <p class="tiny" id="rg-status"></p>
+      <button class="btn primary wide big" id="rg-save">Gebiet speichern</button>
     </div>
   </div>
 
@@ -291,6 +323,7 @@
   <script src="js/geo.js"></script>
   <script src="js/optimize.js"></script>
   <script src="js/speech.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

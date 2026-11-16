@@ -69,7 +69,7 @@
   const flat = s => s.toLowerCase().replace(/ß/g, 'ss').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, '');
 
   function splitSpoken(line, places) {
-    const T = line.replace(/,/g, ' , ').split(/\s+/).filter(Boolean), n = T.length;
+    const T = line.replace(/,/g, ' , ').replace(/\b(\d{1,4}[a-h]?)\s*([-–—])\s*(\d{1,3})\b/gi, '$1 $2 $3').split(/\s+/).filter(Boolean), n = T.length;
     const placeSet = new Set((places || []).map(flat));
     // Paketangabe ab Position j? → { pk, len }
     const pkAt = j => {
@@ -79,6 +79,8 @@
       let m;
       if (/^(ein|eine|einem|einen)$/i.test(a) && /^(paket|päckchen|sendung)$/i.test(b)) return { pk: 1, len: k + 2 - j };
       if (/^\d{1,3}$/.test(a) && UNIT.test(b)) return { pk: +a, len: k + 2 - j };
+      if (/^[-–—]$/.test(a) && /^\d{1,3}$/.test(b)) return { pk: +b, len: k + 2 - j };
+      if ((m = a.match(/^[-–—](\d{1,3})$/))) return { pk: +m[1], len: k + 1 - j };
       if ((m = a.match(/^(\d{1,3})[x×]$/i)) || (m = a.match(/^[x×](\d{1,3})$/i)) || (m = a.match(/^\((\d{1,3})\)$/))) return { pk: +m[1], len: k + 1 - j };
       if (/^[x×]$/i.test(a) && /^\d{1,3}$/.test(b)) return { pk: +b, len: k + 2 - j };
       return null;
@@ -137,7 +139,11 @@
     const U = '(?:x|×|mal|stk\\.?|stück|pakete?n?|päckchen|sendungen?|pkt\\.?|pk\\.?)';
     q = q.replace(/\b(?:ein|eine|einem)\s+(paket|päckchen|sendung)\b/i, '1 $1');
     let m;
-    if ((m = q.match(new RegExp('^(\\d{1,3})\\s*' + U + '(?![a-zäöü])[\\s:,-]*', 'i')))) { pk = +m[1]; q = q.slice(m[0].length); }
+    // „Hauptstraße 5 - 3“ / „Hauptstraße 5-3“ / „Hauptstraße 5, Ort - 3“: Zahl nach dem Strich = Pakete
+    if ((m = q.match(/(\d{1,4}[a-z]?)\s*[-–—]\s*(\d{1,3})\s*$/i)) || (m = q.match(/(,\s*[^,\d]+?)\s+[-–—]\s*(\d{1,3})\s*$/))) {
+      pk = +m[2]; q = q.slice(0, m.index) + m[1];
+    }
+    else if ((m = q.match(new RegExp('^(\\d{1,3})\\s*' + U + '(?![a-zäöü])[\\s:,-]*', 'i')))) { pk = +m[1]; q = q.slice(m[0].length); }
     else if ((m = q.match(new RegExp('[\\s,;:–-]+(?:mit\\s+)?(\\d{1,3})\\s*' + U + '$', 'i')))) { pk = +m[1]; q = q.slice(0, m.index); }
     else if ((m = q.match(/[\s,]+[x×]\s*(\d{1,3})$/i))) { pk = +m[1]; q = q.slice(0, m.index); }
     else if ((m = q.match(/\s*\((\d{1,3})\)$/))) { pk = +m[1]; q = q.slice(0, m.index); }
