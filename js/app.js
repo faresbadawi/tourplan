@@ -298,8 +298,13 @@
   const Map_ = {
     map: null, tiles: null, layers: null, poiLayer: null, me: null, full: false, lastFit: '',
     place() {                       // Karte in den passenden Platz hängen (Handy: im Ergebnis, breit: rechts, Vollbild: direkt in die Seite)
-      const wrap = $('#map-wrap'), slot = this.full ? document.body : wide() ? $('#map-slot-desktop') : $('#map-slot-mobile');
-      if (wrap.parentNode !== slot) slot.appendChild(wrap);
+      const wrap = $('#map-wrap'), slot = this.full ? document.body : wide() ? $('#map-slot-desktop') : route ? $('#map-slot-mobile') : $('#map-slot-home');
+      if (wrap.parentNode !== slot) {
+        slot.appendChild(wrap);
+        // neuer Platz = neue Größe → neu einpassen, sobald das Layout steht
+        this.lastFit = '';
+        if (this.map) setTimeout(() => { this.map.invalidateSize(); this.lastFit = ''; this.render(true); }, 120);
+      }
     },
     ensure() {
       if (!window.L) return null;
@@ -359,7 +364,11 @@
         });
         route.geometry.forEach(c => bounds.push(c));
       } else {
-        stops.filter(s => s.status === 'ok').forEach(s => { this.pin(s, '•').bindTooltip(esc(s.label)).addTo(this.layers); bounds.push([s.lat, s.lon]); });
+        this.seen = this.seen || new Set();
+        stops.filter(s => s.status === 'ok').forEach(s => {
+          const fresh = !this.seen.has(s.id); this.seen.add(s.id);        // neue Adressen „fallen“ auf die Karte
+          this.pin(s, s.pk && s.pk > 1 ? `<span>${s.pk}</span>` : '', 'dot' + (fresh ? ' drop' : '')).bindTooltip(esc(s.label)).addTo(this.layers); bounds.push([s.lat, s.lon]);
+        });
       }
       this.pin(depot, HOME_ICON, 'depot').bindTooltip(esc(depot.name)).addTo(this.layers);
       this.renderPois();
@@ -807,6 +816,7 @@
     btn.lastChild.textContent = pending ? ' Adressen werden gesucht …' : ` Route optimieren (${okCount})`;
     renderGreeting();
     renderDock();
+    const ht = $('#howto'); if (ht && !ht.dataset.touched) ht.open = !stops.length;
   }
 
   function removeStop(id) {
@@ -1520,19 +1530,17 @@
   /* ---------- Daumen-Leiste (Handy) ---------- */
   /* Kopf: Fortschritt der ganzen Tour, Mikrofon, Tour beenden */
   function renderTop() {
-    const strip = $('#topstrip');
-    $('#tour-stop').hidden = !route;
-    if (route && route._sum) {
-      const { n, doneCount, pkTotal, pkDone, endAt } = route._sum;
-      $('#ts-text').innerHTML = `<span>${ICON.flag}<b>${doneCount}/${n}</b> Stopps</span><span>${ICON.box}<b>${pkTotal - pkDone}</b> Pakete übrig</span><span>${ICON.home}fertig ca. <b>${fmtTime(new Date(endAt))}</b></span>`;
-      $('#ts-fill').style.width = (n ? doneCount / n * 100 : 0) + '%';
-      strip.hidden = false;
-    } else if (stops.length) {
-      const ok = stops.filter(s => s.status === 'ok').length, pk = pkCount(stops);
-      $('#ts-text').innerHTML = `<span>${PIN_ICON}<b>${stops.length}</b> Adresse${stops.length === 1 ? '' : 'n'}${ok < stops.length ? ` (${ok} gefunden)` : ''}</span><span>${ICON.box}<b>${pk}</b> Paket${pk === 1 ? '' : 'e'}</span>`;
-      $('#ts-fill').style.width = (stops.length ? ok / stops.length * 100 : 0) + '%';
-      strip.hidden = false;
-    } else strip.hidden = true;
+    $('#tour-stop').hidden = true; $('#topstrip').hidden = true;
+    const bar = $('#tour-bar');
+    document.body.classList.toggle('touring', !!route);
+    if (!route || !route._sum) { bar.innerHTML = ''; return; }
+    const { n, doneCount, pkTotal, pkDone, endAt } = route._sum;
+    const f = n ? doneCount / n : 0, C = 2 * Math.PI * 22;
+    bar.innerHTML = `<div class="tb-ring"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" class="bg"/><circle cx="26" cy="26" r="22" class="fg" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - f)}"/></svg><b><span>${doneCount}</span><small>/${n}</small></b></div>
+      <div class="tb-txt"><b>${doneCount === n ? 'Alle Stopps erledigt' : `Noch ${n - doneCount} Stopp${n - doneCount === 1 ? '' : 's'}`}</b>
+        <span>${ICON.box}${pkTotal - pkDone} Paket${pkTotal - pkDone === 1 ? '' : 'e'} übrig</span><span>${ICON.home}zurück ca. ${fmtTime(new Date(endAt))} Uhr</span></div>
+      <button class="tb-end" id="tb-end" aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`;
+    $('#tb-end').onclick = () => $('#tour-stop').onclick();
   }
 
   /* Leiste im Kartenvollbild: nur nächster Stopp, Haken und Navigation */
@@ -1583,7 +1591,10 @@
     const h = new Date().getHours();
     const g = h < 11 ? 'Guten Morgen' : h < 17 ? 'Hallo' : 'Guten Abend';
     const ok = stops.filter(s => s.status === 'ok').length;
-    $('#greeting').innerHTML = `${g}${settings.name ? ', ' + esc(settings.name) : ''}.<small>${ok ? `${ok} Stopp${ok > 1 ? 's' : ''} ab ` : 'Start und Ziel: '}<button class="depot-link" id="depot-link">${esc(settings.depot?.name || 'Depot')}</button></small>`;
+    const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+    const last = history_[0];
+    const lastTxt = last ? ` · letzte Tour ${new Date(last.end).toDateString() === new Date(Date.now() - 864e5).toDateString() ? 'gestern' : new Date(last.end).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}: ${last.stops} Stopps` : '';
+    $('#greeting').innerHTML = `<span class="g-date">${today}${lastTxt}</span>${g}${settings.name ? ', ' + esc(settings.name) : ''}.<small>${ok ? `${ok} Stopp${ok > 1 ? 's' : ''} ab ` : 'Start und Ziel: '}<button class="depot-link" id="depot-link">${esc(settings.depot?.name || 'Depot')}</button></small>`;
     $('#depot-link').onclick = openSettings;
     const c = Geo.streetCount();
     const a = Geo.addrCount();
@@ -1653,32 +1664,54 @@
   const tileUrl = (st, [z, x, y]) => MAP_STYLES[st].url.replace('{s}', 'a').replace('{r}', '').replace('{z}', z).replace('{x}', x).replace('{y}', y);
 
   const Region = {
-    map: null, circle: null, r: 8,
+    map: null, circle: null, pin: null, center: null, r: 8,
     open() {
       if (!window.L) return;
       $('#region').hidden = false; document.body.classList.add('map-full');
       const c = settings.region || settings.depot;
+      this.center = L.latLng(c.lat, c.lon);
       this.r = settings.region ? Math.round(settings.region.r / 1000) : 8;
       $('#rg-range').value = this.r;
       if (!this.map) {
         this.map = L.map($('#region-map'), { zoomControl: false });
-        this.map.on('move', () => this.update());
-        this.map.on('moveend', () => this.update(true));
+        this.map.on('click', e => this.setCenter(e.latlng, true));
       }
       if (this.tiles) this.tiles.remove();
       const st = MAP_STYLES[mapStyle()];
       this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(isDark()) : st.url, { maxZoom: 19, subdomains: 'abc', attribution: st.attr }).addTo(this.map);
       $('#region-map').classList.toggle('no-filter', !st.filter);
-      setTimeout(() => { this.map.invalidateSize(); this.map.setView([c.lat, c.lon], this.zoomFor()); this.update(true); }, 30);
+      setTimeout(() => { this.map.invalidateSize(); this.map.setView(this.center, this.zoomFor()); this.setCenter(this.center); this.fit(); }, 30);
       $('#rg-status').textContent = ''; $('#rg-progress').hidden = true; $('#rg-save').disabled = false;
     },
     close() { $('#region').hidden = true; document.body.classList.remove('map-full'); },
+    fit() { if (this.circle) this.map.fitBounds(this.circle.getBounds(), { padding: [30, 30], paddingBottomRight: [0, Math.round(innerHeight * .45)] }); },
+    setCenter(ll, fromTap) {
+      this.center = ll;
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      if (!this.pin) {
+        this.pin = L.marker(ll, { draggable: true, icon: L.divIcon({ className: '', html: '<div class="rg-pin"></div>', iconSize: [34, 34], iconAnchor: [17, 17] }) }).addTo(this.map);
+        this.pin.on('drag', e => { this.center = e.target.getLatLng(); this.update(); });
+        this.pin.on('dragend', () => this.update(true));
+      } else this.pin.setLatLng(ll);
+      if (!this.circle) this.circle = L.circle(ll, { radius: this.r * 1000, color, weight: 3, fillColor: color, fillOpacity: .12, interactive: false }).addTo(this.map);
+      this.circle.setLatLng(ll);
+      if (fromTap) { this.circle.setRadius(1); this.grow(); if (navigator.vibrate) navigator.vibrate(10); }   // Kreis „zieht sich auf“
+      else this.update(true);
+    },
+    grow() {
+      const target = this.r * 1000, t0 = performance.now();
+      const step = now => {
+        const f = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - f, 3);
+        this.circle.setRadius(Math.max(1, target * e));
+        if (f < 1) requestAnimationFrame(step); else this.update(true);
+      };
+      requestAnimationFrame(step);
+    },
     zoomFor() { return Math.max(8, Math.min(14, Math.round(Math.log2(40000 / this.r)) + 3)); },
     update(full) {
-      if (!this.map) return;
-      const c = this.map.getCenter(), rM = this.r * 1000;
-      if (!this.circle) this.circle = L.circle(c, { radius: rM, color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), weight: 2.5, fillOpacity: .08, interactive: false }).addTo(this.map);
-      else this.circle.setLatLng(c).setRadius(rM);
+      if (!this.map || !this.center) return;
+      const c = this.center, rM = this.r * 1000;
+      this.circle.setLatLng(c).setRadius(rM);
       $('#rg-r').textContent = this.r + ' km';
       if (!full) return;
       const covered = Geo.streetsCover(c.lat, c.lng, rM);
@@ -1693,7 +1726,7 @@
       $('#rg-tiles-info').textContent = ok ? `${plan.list.length} Kartenteile, ca. ${Math.max(1, Math.round(plan.list.length * 18 / 1024))} MB · Details bis Zoomstufe ${plan.maxZ}${plan.maxZ < 15 ? ' (kleinerer Kreis = mehr Details)' : ''}` : 'Für den TomTom-Stil nicht möglich – anderen Kartenstil wählen';
     },
     async save() {
-      const c = this.map.getCenter(), rM = this.r * 1000;
+      const c = this.center, rM = this.r * 1000;
       const chips = [...$('#rg-places').querySelectorAll('[data-place]')];
       const chosen = chips.length ? chips.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.place) : null;
       settings.region = { lat: +c.lat.toFixed(5), lon: +c.lng.toFixed(5), r: rM };
@@ -1734,7 +1767,7 @@
       setTimeout(() => this.close(), failed ? 5000 : 1600);
     },
   };
-  $('#rg-range').addEventListener('input', e => { Region.r = +e.target.value; Region.update(); clearTimeout(Region.t); Region.t = setTimeout(() => Region.update(true), 250); });
+  $('#rg-range').addEventListener('input', e => { Region.r = +e.target.value; Region.update(); clearTimeout(Region.t); Region.t = setTimeout(() => { Region.update(true); Region.fit(); }, 350); });
   $('#rg-close').onclick = () => Region.close();
   $('#rg-save').onclick = () => Region.save();
   $('#rg-places').addEventListener('click', e => { const b = e.target.closest('[data-place]'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); });
@@ -1772,7 +1805,7 @@
       <div class="txt"><b>Dein Zustellgebiet: ${esc(settings.area.join(', '))}</b>Adressen außerhalb werden markiert. Stimmt das?</div>
       <button class="btn ghost" id="area-edit">Anpassen</button><button class="btn primary" id="area-ok">Passt</button></section>`;
     $('#area-ok').onclick = () => { settings.areaOk = true; persist(); renderAreaCard(); };
-    $('#area-edit').onclick = () => { settings.areaOk = true; persist(); renderAreaCard(); openSettings(); setTimeout(() => $('#s-area').scrollIntoView({ block: 'center', behavior: 'smooth' }), 200); };
+    $('#area-edit').onclick = () => { settings.areaOk = true; persist(); renderAreaCard(); openSettings(); sPage('area'); };
   }
 
   /* Einrichtung auf ein anderes Gerät übertragen: alles steckt im Link, nichts geht über einen Server */
@@ -1788,6 +1821,15 @@
   }
 
   /* ---------- Einstellungen ---------- */
+  function sPage(name) {
+    let cur = null;
+    document.querySelectorAll('#settings .s-page').forEach(p => { p.hidden = p.dataset.page !== name; if (!p.hidden) cur = p; });
+    $('#settings-title').textContent = name === 'main' ? 'Einstellungen' : cur.dataset.title;
+    $('#s-back').hidden = name === 'main';
+    $('#settings .sheet').scrollTop = 0;
+  }
+  $('#settings').addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) sPage(g.dataset.go); });
+  $('#s-back').onclick = () => sPage('main');
   let pendingDepot = null;
   function openSettings() {
     pendingDepot = null;
@@ -1809,6 +1851,10 @@
     $('#s-tomtom').value = settings.tomtom || '';
     $('#s-ai-key').value = settings.aiKey || '';
     renderIndexInfo();
+    const ar = settings.area || [];
+    $('#s-area-sum').textContent = ar.length ? ar.slice(0, 3).join(', ') + (ar.length > 3 ? ` + ${ar.length - 3} weitere` : '') : 'noch nicht festgelegt';
+    $('#s-keys-sum').textContent = [settings.tomtom ? 'TomTom ✓' : 'TomTom –', settings.aiKey ? 'KI ✓' : 'KI –'].join(' · ');
+    sPage('main');
     $('#settings').hidden = false;
   }
   const closeSettings = () => { $('#settings').hidden = true; };
@@ -1888,6 +1934,8 @@
     runGeocoding();
     Pois.refresh();
     loadIndex(false);
+    setTimeout(() => Me.auto(), 900);             // Standort schon erlaubt → gleich auf der Startkarte zeigen
+    $('#howto').addEventListener('toggle', () => { $('#howto').dataset.touched = '1'; });
   }
 
   applyTheme();

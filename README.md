@@ -61,3 +61,11 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - „Geschafft!“-Bildschirm am Ende, Knopf „Ende“ statt Stopp-Quadrat, kleine wegwischbare Rückgängig-Blase.
 - Optional: Gemini-KI (kostenloser Schlüssel) zum Zerlegen diktierter Sätze.
 - Fehler behoben: Absturz beim Neuöffnen während einer Tour; Overpass-Abfragen mit Wiederholung und parallelen Ersatzservern.
+
+## Version 7
+
+- Startseite mit Karte: Depot, eigener Standort, neue Adressen fallen als Punkte hinein; Anleitung „So schreibst oder sagst du Adressen“.
+- Ruhige Kopfzeile; während der Tour ein Tour-Kopf mit Fortschrittsring, Paketen, Rückkehrzeit und „Beenden“.
+- Einstellungen mit Unterseiten: Zustellgebiet, Tour & Navigation, Darstellung & Karte, Schlüssel & KI.
+- Gebietswahl: auf die Karte tippen setzt den Mittelpunkt (Nadel ziehbar), der Kreis zieht sich auf.
+- KI jetzt mit Groq (kostenloser Schlüssel „gsk_…“); Schlüssel gehen beim Übertragen auf andere Geräte mit.

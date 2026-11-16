@@ -891,3 +891,80 @@ input:focus, textarea:focus { background: var(--surface); }
 .dock-wide.loading { color: transparent; }
 .btn.primary.loading { color: transparent !important; }
 .card-head { gap: 12px; } .card-head .hint { text-align: right; font-size: 12.5px; line-height: 1.3; max-width: 60%; }
+.rg-pin { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 4px solid #fff; box-shadow: 0 4px 14px rgba(0,0,0,.35); animation: pop .35s var(--spring); cursor: grab; }
+.region-map { cursor: crosshair; }
+#rg-hint b { color: var(--accent); }
+
+/* =====================================================================
+   Version 7 – Startseite mit Karte, Tour-Kopf, Einstellungen mit Unterseiten
+   ===================================================================== */
+/* Kopfzeile bleibt ruhig: nur Marke + drei Knöpfe */
+.topstrip, #tour-stop { display: none !important; }
+body.touring .greeting { display: none; }
+
+/* Startseite */
+.greeting .g-date { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--accent); text-transform: none; margin-bottom: 2px; }
+#map-slot-home .map-wrap { height: clamp(220px, 34dvh, 340px); }
+#map-slot-home .map-fab.locate { display: grid; top: auto; bottom: 12px; right: 12px; }
+#map-slot-home .map-fab.full { top: 12px; }
+.map-empty { inset: auto 12px 12px 12px; background: none; display: flex; justify-content: center; }
+.map-empty p { margin: 0; padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 4px 14px rgba(0,0,0,.15); font-size: 13px; font-weight: 600; color: var(--muted); }
+#map-slot-home .map-empty { right: 70px; justify-content: flex-start; }
+.pin.dot { width: 24px; height: 24px; font-size: 11px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); border-width: 3px; }
+.pin.dot:empty::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.pin.drop { animation: drop .55s cubic-bezier(.3,1.5,.5,1) both; }
+@keyframes drop { from { transform: translateY(-40px) rotate(-45deg) scale(.4); opacity: 0; } to { transform: rotate(-45deg); opacity: 1; } }
+
+/* Anleitung zum Schreiben */
+.howto { margin-top: 12px; border-radius: 16px; background: var(--surface-2); padding: 2px 14px; }
+.howto summary { cursor: pointer; padding: 11px 0; font-weight: 700; font-size: 14.5px; color: var(--accent); list-style: none; display: flex; align-items: center; gap: 8px; }
+.howto summary::-webkit-details-marker { display: none; }
+.howto summary::before { content: "?"; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 13px; font-weight: 800; flex: none; }
+.howto summary::after { content: "›"; margin-left: auto; font-size: 20px; transition: transform .2s; }
+.howto[open] summary::after { transform: rotate(90deg); }
+.howto ul { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.howto li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--surface); border-radius: 12px; }
+.howto code { font: 700 15px var(--sans); color: var(--text); }
+.howto li span { font-size: 13px; color: var(--muted); }
+.howto li .say { font-weight: 600; color: var(--text); font-size: 14px; }
+
+/* Tour-Kopf: Fortschrittsring, Pakete, Ende */
+.tour-bar { display: flex; align-items: center; gap: 14px; background: var(--surface); border-radius: var(--radius); padding: 12px 12px 12px 14px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.tour-bar:empty { display: none; }
+.tb-ring { position: relative; width: 52px; height: 52px; flex: none; }
+.tb-ring svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+.tb-ring circle { fill: none; stroke-width: 6; }
+.tb-ring .bg { stroke: var(--surface-2); }
+.tb-ring .fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .6s var(--spring); }
+.tb-ring b { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 16px; }
+.tb-ring b small { font-size: 11px; color: var(--muted); font-weight: 700; }
+.tb-txt { flex: 1; min-width: 0; }
+.tb-txt b { display: block; font-weight: 800; font-size: 16.5px; letter-spacing: -.02em; }
+.tb-txt span { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-txt svg { width: 14px; height: 14px; }
+.tb-end { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 14px; padding: 10px 13px; background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 14px; }
+.tb-end svg { width: 17px; height: 17px; color: var(--danger); }
+.tb-end:active { transform: scale(.95); }
+@media (max-width: 370px) { .tb-end span { display: none; } }
+
+/* Einstellungen mit Unterseiten */
+.settings-sheet { display: flex; flex-direction: column; padding-bottom: 0; }
+.settings-sheet .sheet-head { gap: 8px; }
+.settings-sheet .sheet-head h2 { flex: 1; }
+.s-page { animation: sIn .22s ease; }
+@keyframes sIn { from { opacity: 0; transform: translateX(14px); } }
+.s-menu { margin-top: 18px; display: grid; gap: 8px; }
+.menu-item.highlight { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; margin-bottom: 14px; }
+.menu-item.highlight small { color: rgba(255,255,255,.85); }
+.menu-item .chev { margin-left: auto; color: var(--muted); }
+.menu-item.highlight .chev { color: #fff; }
+.danger-link { display: block; margin: 18px auto 4px; color: var(--danger); font-weight: 600; }
+.s-foot { position: sticky; bottom: 0; margin: 18px -20px 0; padding: 12px 20px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 75%, transparent); }
+.tb-ring b { display: flex; align-items: baseline; justify-content: center; place-items: initial; align-content: center; flex-wrap: nowrap; }
+.tb-ring b span { font-size: 17px; }
+.tb-ring b { inset: 0; display: flex; align-items: center; }
+.tb-txt span + span { margin-top: 1px; }
+.pin.dot { width: 30px; height: 30px; font-size: 12px; }
+.pin.dot:empty::after { width: 8px; height: 8px; }
+.pin.dot > * , .pin.dot { line-height: 1; }
+.pin.dot span { transform: rotate(45deg); display: block; }

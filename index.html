@@ -109,6 +109,7 @@
       <div class="col-main">
         <p class="greeting" id="greeting"></p>
         <div id="area-card"></div>
+        <div id="map-slot-home" class="map-slot home"></div>
 
         <!-- Eingabe -->
         <section class="card" id="input-card">
@@ -117,7 +118,7 @@
             <span class="hint" id="area-hint">eine pro Zeile</span>
           </div>
           <div class="composer">
-            <textarea id="addr-input" rows="3" spellcheck="false" placeholder="Straße tippen – Vorschläge erscheinen&#10;z. B. Hauptstraße 12, 3 Pakete"></textarea>
+            <textarea id="addr-input" rows="3" spellcheck="false" placeholder="Hauptstraße 12 - 3&#10;Lindenweg 4 und 6"></textarea>
             <div class="suggest" id="addr-suggest" hidden></div>
             <div class="interim" id="interim"></div>
           </div>
@@ -128,7 +129,17 @@
             </button>
             <button class="btn primary" id="add-btn">Hinzufügen</button>
           </div>
-          <p class="tiny">Mikrofon <b>gedrückt halten</b>, Adresse sagen, loslassen – sie landet direkt in der Liste. Mehrere Adressen trennst du mit <b>„nächste“</b>, die Paketzahl sagst du einfach dazu.</p>
+          <details class="howto" id="howto">
+            <summary>So schreibst oder sagst du Adressen</summary>
+            <ul>
+              <li><code>Hauptstraße 12</code><span>eine Adresse pro Zeile – Ort ergänzt die App selbst</span></li>
+              <li><code>Hauptstraße 12 - 3</code><span>mit <b>3 Paketen</b>: Zahl nach dem Strich</span></li>
+              <li><code>Hauptstraße 12</code><span>ohne Zahl = <b>1 Paket</b></span></li>
+              <li><code>Lindenweg 4 und 6</code><span>mehrere Hausnummern derselben Straße</span></li>
+              <li><code>Am Markt 3, Wittingen</code><span>Ort nur nötig, wenn es die Straße mehrmals gibt</span></li>
+              <li><span class="say">🎙 „Hauptstraße zwölf drei Pakete, Lindenweg vier“</span><span>sprechen: Mikrofon gedrückt halten, loslassen – fertig</span></li>
+            </ul>
+          </details>
         </section>
 
         <!-- Stopps -->
@@ -146,6 +157,7 @@
 
         <!-- Ergebnis -->
         <section id="result" hidden>
+          <div class="tour-bar" id="tour-bar"></div>
           <div class="card next-card" id="next-card"></div>
           <div id="map-slot-mobile" class="map-slot"></div>
           <div class="stats" id="stats"></div>
@@ -169,7 +181,7 @@
           <div class="map-wrap" id="map-wrap">
             <div id="map" class="map"></div>
             <button class="map-tap" id="map-tap" aria-label="Karte im Vollbild öffnen"></button>
-            <div class="map-empty" id="map-empty"><p>Deine Route erscheint hier, sobald du optimierst.</p></div>
+            <div class="map-empty" id="map-empty"><p>Neue Adressen erscheinen hier als Punkte</p></div>
             <button class="map-fab close" id="map-close" aria-label="Vollbild schließen" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
             <button class="map-fab full" id="map-full" aria-label="Vollbild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
@@ -185,78 +197,99 @@
 
   <!-- ============ Einstellungen ============ -->
   <div class="sheet-backdrop" id="settings" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="sheet settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="sheet-head">
+        <button class="btn ghost icon s-back" id="s-back" aria-label="Zurück" hidden><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
         <h2 id="settings-title">Einstellungen</h2>
         <button class="btn ghost icon" id="settings-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <label class="field"><span>Dein Name</span><input id="s-name" type="text"></label>
-      <label class="field"><span>Depot – Name</span><input id="s-depot-name" type="text"></label>
-      <label class="field"><span>Depot – Adresse</span>
-        <div class="input-row">
-          <input id="s-depot-addr" type="text" autocomplete="off">
-          <button class="btn ghost" id="s-depot-check">Prüfen</button>
+
+      <div class="s-page" data-page="main">
+        <label class="field"><span>Dein Name</span><input id="s-name" type="text"></label>
+        <label class="field"><span>Depot – Name</span><input id="s-depot-name" type="text"></label>
+        <label class="field"><span>Depot – Adresse</span>
+          <div class="input-row">
+            <input id="s-depot-addr" type="text" autocomplete="off">
+            <button class="btn ghost" id="s-depot-check">Prüfen</button>
+          </div>
+        </label>
+        <div class="suggest" id="s-suggest" hidden></div>
+        <div id="s-depot-result" class="geo-result" hidden></div>
+        <div class="menu s-menu">
+          <button class="menu-item" data-go="area"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg><span><b>Zustellgebiet</b><small id="s-area-sum"></small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="menu-item" data-go="route"><svg viewBox="0 0 24 24"><path d="M4 19c4-10 12-4 16-14"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg><span><b>Tour &amp; Navigation</b><small>Navi-App, Rundtour, Zeit pro Stopp, Paketstellen</small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="menu-item" data-go="look"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg><span><b>Darstellung &amp; Karte</b><small>Hell/Dunkel, Kartenstil, Standort-Symbol, Töne</small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="menu-item" data-go="keys"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg><span><b>Schlüssel &amp; KI</b><small id="s-keys-sum">TomTom, Groq</small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="menu-item" id="s-transfer"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span><b>Auf anderem Gerät einrichten</b><small>Ein Link mit Depot, Farben, Gebiet und Schlüsseln</small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
         </div>
-      </label>
-      <div class="suggest" id="s-suggest" hidden></div>
-      <div id="s-depot-result" class="geo-result" hidden></div>
-      <h3 class="mini">Navigations-App</h3>
-      <div class="choice-grid compact" id="s-nav"></div>
-      <h3 class="mini">Darstellung</h3>
-      <div class="segmented" id="s-theme"></div>
-      <h3 class="mini">Karte</h3>
-      <div class="segmented" id="s-mapstyle"></div>
-      <h3 class="mini">Mein Standort auf der Karte</h3>
-      <div class="segmented" id="s-meicon"></div>
-      <h3 class="mini">Zustellgebiet</h3>
-      <p class="sheet-note" id="s-area-note">Tippe die Orte an, in denen du zustellst. Straßen dort werden bevorzugt vorgeschlagen, Adressen außerhalb werden markiert.</p>
-      <div class="area-chips" id="s-area"></div>
-      <button class="menu-item" id="s-region" style="margin-top:12px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg><span><b>Gebiet auf der Karte wählen</b><small>Mittelpunkt und Radius festlegen · Straßen, Hausnummern und Karte offline speichern</small></span></button>
-      <label class="switch">
-        <input type="checkbox" id="s-roundtrip">
-        <span class="track"><span class="thumb"></span></span>
-        <span>Tour endet wieder am Depot</span>
-      </label>
-      <label class="field" style="margin-top:18px"><span>Minuten pro Stopp <em>(für die Ankunftszeit)</em></span>
-        <input id="s-stopmin" type="number" min="0" max="30" step="1" inputmode="numeric">
-      </label>
-      <label class="switch">
-        <input type="checkbox" id="s-ai">
-        <span class="track"><span class="thumb"></span></span>
-        <span>Intelligente Text-Erkennung<br><small>Abkürzungen, Zahlwörter, Paketzahlen und Trennungen automatisch verstehen</small></span>
-      </label>
-      <div class="idx" id="s-index"></div>
-      <label class="switch">
-        <input type="checkbox" id="s-pois">
-        <span class="track"><span class="thumb"></span></span>
-        <span>Packstationen &amp; Postfilialen an der Route<br><small>auf der Karte zeigen, mit Öffnungszeiten</small></span>
-      </label>
-      <h3 class="mini">Genauere Adressen <em class="opt">optional</em></h3>
-      <label class="field"><span>TomTom-Schlüssel <em>kostenlos auf developer.tomtom.com</em></span>
-        <div class="input-row">
-          <input id="s-tomtom" type="text" autocomplete="off" spellcheck="false" placeholder="leer lassen = freie Dienste">
-          <button class="btn ghost" id="s-tomtom-test">Testen</button>
-        </div>
-      </label>
-      <p class="sheet-note" id="s-tomtom-note">Mit Schlüssel sucht die App Hausnummern zuerst bei TomTom und bietet die TomTom-Karte an.</p>
-      <h3 class="mini">KI-Texterkennung <em class="opt">optional · kostenlos</em></h3>
-      <label class="field"><span>Gemini-Schlüssel <em>kostenlos auf aistudio.google.com</em></span>
-        <div class="input-row">
-          <input id="s-ai-key" type="text" autocomplete="off" spellcheck="false" placeholder="leer lassen = ohne KI">
-          <button class="btn ghost" id="s-ai-test">Testen</button>
-        </div>
-      </label>
-      <p class="sheet-note" id="s-ai-note">Mit Schlüssel sortiert Googles KI Gemini diktierte Sätze in Straße, Hausnummer, Ort und Pakete – mit den Straßen deines Gebiets. Dafür gehen der Text und die Straßennamen an Google; im kostenlosen Tarif darf Google sie zur Verbesserung nutzen.</p>
-      <label class="switch">
-        <input type="checkbox" id="s-sound">
-        <span class="track"><span class="thumb"></span></span>
-        <span>Töne &amp; Vibration beim Abhaken</span>
-      </label>
-      <button class="menu-item" id="s-transfer" style="margin-top:18px"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span><b>Auf anderem Gerät einrichten</b><small>Link mit Depot, Farben, Gebiet und allen Einstellungen – öffnen, fertig</small></span></button>
-      <div class="row-actions">
-        <button class="btn danger ghost" id="s-reset">App zurücksetzen</button>
-        <button class="btn primary" id="s-save">Speichern</button>
+        <button class="link danger-link" id="s-reset">App zurücksetzen</button>
       </div>
+
+      <div class="s-page" data-page="area" data-title="Zustellgebiet" hidden>
+        <button class="menu-item highlight" id="s-region"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg><span><b>Gebiet auf der Karte wählen</b><small>Punkt setzen, Umkreis wählen · Straßen, Hausnummern und Karte offline speichern</small></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></button>
+        <div class="idx" id="s-index"></div>
+        <h3 class="mini">Orte in deinem Gebiet</h3>
+        <p class="sheet-note" id="s-area-note">Antippen zum An- oder Abwählen. Straßen dort werden bevorzugt, Adressen außerhalb werden markiert.</p>
+        <div class="area-chips" id="s-area"></div>
+      </div>
+
+      <div class="s-page" data-page="route" data-title="Tour &amp; Navigation" hidden>
+        <h3 class="mini">Navigations-App</h3>
+        <div class="choice-grid compact" id="s-nav"></div>
+        <label class="switch">
+          <input type="checkbox" id="s-roundtrip">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Tour endet wieder am Depot</span>
+        </label>
+        <label class="field" style="margin-top:18px"><span>Minuten pro Stopp <em>(für die Ankunftszeit)</em></span>
+          <input id="s-stopmin" type="number" min="0" max="30" step="1" inputmode="numeric">
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="s-pois">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Packstationen &amp; Postfilialen an der Route<br><small>auf der Karte zeigen, mit Öffnungszeiten</small></span>
+        </label>
+      </div>
+
+      <div class="s-page" data-page="look" data-title="Darstellung &amp; Karte" hidden>
+        <h3 class="mini">Darstellung</h3>
+        <div class="segmented" id="s-theme"></div>
+        <h3 class="mini">Kartenstil</h3>
+        <div class="segmented" id="s-mapstyle"></div>
+        <h3 class="mini">Mein Standort auf der Karte</h3>
+        <div class="segmented" id="s-meicon"></div>
+        <label class="switch">
+          <input type="checkbox" id="s-sound">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Töne &amp; Vibration beim Abhaken</span>
+        </label>
+      </div>
+
+      <div class="s-page" data-page="keys" data-title="Schlüssel &amp; KI" hidden>
+        <label class="switch">
+          <input type="checkbox" id="s-ai">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Intelligente Text-Erkennung<br><small>Zahlwörter, Paketzahlen und mehrere Adressen in einem Satz verstehen</small></span>
+        </label>
+        <h3 class="mini">KI für diktierte Sätze <em class="opt">optional · kostenlos</em></h3>
+        <label class="field"><span>Groq-Schlüssel <em>kostenlos auf console.groq.com → API Keys</em></span>
+          <div class="input-row">
+            <input id="s-ai-key" type="text" autocomplete="off" spellcheck="false" placeholder="gsk_…  (leer = ohne KI)">
+            <button class="btn ghost" id="s-ai-test">Testen</button>
+          </div>
+        </label>
+        <p class="sheet-note" id="s-ai-note">Mit Schlüssel ordnet eine schnelle KI (Groq) lange diktierte Sätze in Straße, Hausnummer, Ort und Pakete – passend zu den Straßen deines Gebiets. Dafür gehen der Text und Straßennamen an Groq.</p>
+        <h3 class="mini">Genauere Hausnummern <em class="opt">optional</em></h3>
+        <label class="field"><span>TomTom-Schlüssel <em>kostenlos auf developer.tomtom.com</em></span>
+          <div class="input-row">
+            <input id="s-tomtom" type="text" autocomplete="off" spellcheck="false" placeholder="leer lassen = freie Dienste">
+            <button class="btn ghost" id="s-tomtom-test">Testen</button>
+          </div>
+        </label>
+        <p class="sheet-note" id="s-tomtom-note">Mit Schlüssel sucht die App Hausnummern zuerst bei TomTom und bietet die TomTom-Karte an.</p>
+      </div>
+
+      <div class="s-foot"><button class="btn primary wide" id="s-save">Speichern</button></div>
     </div>
   </div>
 
@@ -273,11 +306,10 @@
   <!-- Gebiet auf der Karte wählen -->
   <div class="region" id="region" hidden>
     <div id="region-map" class="region-map"></div>
-    <div class="region-center" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" fill="currentColor"/><circle cx="12" cy="10" r="2.4" fill="#fff" stroke="none"/></svg></div>
     <button class="map-fab rg-close" id="rg-close" aria-label="Schließen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     <div class="region-panel">
       <div class="rg-head"><h2>Gebiet wählen</h2><span class="rg-r" id="rg-r">8 km</span></div>
-      <p class="tiny">Karte verschieben – die Nadel ist der Mittelpunkt. Mit dem Regler den Umkreis wählen.</p>
+      <p class="tiny" id="rg-hint"><b>1.</b> Auf die Karte tippen = Mittelpunkt setzen (oder die Nadel ziehen). <b>2.</b> Mit dem Regler den Umkreis wählen.</p>
       <input type="range" id="rg-range" min="1" max="20" step="1" value="8" aria-label="Radius in Kilometern">
       <div class="rg-places" id="rg-places"></div>
       <label class="switch">
