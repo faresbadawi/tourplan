@@ -469,13 +469,13 @@
         const cur = currentIndex();
         route.order.forEach((id, i) => {
           const s = stopById(id); if (!s) return;
-          const cls = route.done[id] ? 'done' : (i === cur ? 'current' : '');
+          const cls = route.done[id] === 'skip' ? 'done skipped' : route.done[id] ? 'done' : (i === cur ? 'current' : '');
           const pk = s.pk || 1;
           const parts = s.label.split(','), street = parts[0], town = parts.slice(1, 3).join(',').replace(/\b\d{5}\b\s*/, '').trim();
           const mk = this.pin(s, i + 1, cls).bindPopup(`<div class="pin-pop">
             <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
             <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span></div>
-            <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
+            <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button><button type="button" data-pin-skip="${id}">Überspringen</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
             { closeButton: false, offset: [0, -20], className: 'pin-popup', autoPanPadding: [24, 120], maxWidth: 240, minWidth: 220 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
           if (this.popId === id) this.reopen = mk;
@@ -581,7 +581,8 @@
   const MAIL_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3.5 7.5 12 13l8.5-5.5"/></svg>';
   $('#map').addEventListener('click', e => {
     const f = e.target.closest('[data-pin-focus]'); if (f) { Map_.map.closePopup(); focusRouteItem(f.dataset.pinFocus); return; }
-    const d = e.target.closest('[data-pin-done]'); if (d) { Map_.map.closePopup(); toggleDone(d.dataset.pinDone); }
+    const d = e.target.closest('[data-pin-done]'); if (d) { Map_.map.closePopup(); toggleDone(d.dataset.pinDone); return; }
+    const sk = e.target.closest('[data-pin-skip]'); if (sk) { Map_.map.closePopup(); skipStop(sk.dataset.pinSkip); }
   });
   $('#map-tap').onclick = () => Map_.setFull(true);
   $('#map-full').onclick = () => Map_.setFull(true);
@@ -851,6 +852,7 @@
     box: '<svg viewBox="0 0 24 24"><path d="M3.5 8 12 4l8.5 4v8L12 20l-8.5-4zM3.5 8 12 12l8.5-4M12 12v8"/></svg>',
     route: '<svg viewBox="0 0 24 24"><path d="M4 19c4-10 12-4 16-14"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg>',
     flag: '<svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2.5 4L17 12H5"/></svg>',
+    skip: '<svg viewBox="0 0 24 24"><path d="M5 5.5v13l9.5-6.5zM19 5.5v13"/></svg>',
     road: '<svg viewBox="0 0 24 24"><path d="M8 3 4 21M16 3l4 18M12 4v3M12 11v3M12 18v2"/></svg>',
     clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
     home: '<svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20H3z"/><path d="M9.5 20v-5h5v5"/></svg>',
@@ -1356,7 +1358,7 @@
       }
       const ordered = [...doneStops, ...rest];
       const R = await Geo.route([depot, ...ordered, ...(settings.roundtrip ? [depot] : [])]);
-      const done = {}; doneStops.forEach(s => { done[s.id] = true; });
+      const done = {}; doneStops.forEach(s => { done[s.id] = prev.done[s.id] || true; });
       route = {
         order: ordered.map(s => s.id), legs: R.legs, geometry: R.geometry,
         source: R.source === 'osrm' && source === 'osrm' ? 'osrm' : 'luftlinie',
@@ -1433,11 +1435,28 @@
     if (route.done[id] && cur === -1) setTimeout(showDone, 500);
   }
 
+  /** Stopp überspringen: Pakete werden nicht zugestellt und fahren am Ende zurück zum Depot (erneut tippen = wieder offen) */
+  function skipStop(id) {
+    if (!route || !stopById(id) || route.done[id] === true) return;
+    if (route.done[id] === 'skip') { delete route.done[id]; toast('Wieder offen', 1800); }
+    else {
+      route.done[id] = 'skip'; justDone = null; Sfx.uncheck();
+      toast('Übersprungen – die Pakete fahren zurück', 4500, { label: 'Rückgängig', run: () => skipStop(id) });
+    }
+    if (openId === id) openId = null;
+    persist(); renderResult();
+    const cur = currentIndex();
+    if (route.done[id] === 'skip' && cur !== -1 && Map_.visible() && Map_.zoomOn()) setTimeout(() => Map_.flyTo(stopById(route.order[cur]), 17, 1.2), 350);
+    if (route.done[id] === 'skip' && cur === -1) setTimeout(showDone, 500);
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-skip]'); if (b && route) skipStop(b.dataset.skip); });
+
   /* ---------- Geschafft! ---------- */
   function showDone() {
     if (!route || document.querySelector('.done-ov')) return;
     const ordered = route.order.map(stopById).filter(Boolean), d = settings.depot;
-    const pk = pkCount(ordered), km = route.legs.reduce((a, l) => a + l.dist, 0);
+    const sk = ordered.filter(s => route.done[s.id] === 'skip'), dl = ordered.filter(s => route.done[s.id] === true);
+    const pk = pkCount(dl), pkBack = pkCount(sk), km = route.legs.reduce((a, l) => a + l.dist, 0);
     const mins = Math.round((Date.now() - route.created) / 60000);
     const colors = ['#33CCFF', '#0A84D6', '#FFCC00', '#2FD08E', '#FF6B57', '#ffffff'];
     const conf = Array.from({ length: 36 }, (_, i) => `<i style="left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${(Math.random() * .6).toFixed(2)}s;animation-duration:${(1.8 + Math.random() * 1.4).toFixed(2)}s;transform:rotate(${Math.round(Math.random() * 360)}deg)"></i>`).join('');
@@ -1447,8 +1466,8 @@
       <div class="done-card">
         <div class="done-badge"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
         <h2>Geschafft${settings.name ? ', ' + esc(settings.name) : ''}!</h2>
-        <p>Alle Stopps sind erledigt. Stark gemacht.</p>
-        <div class="done-stats"><div><b>${ordered.length}</b><span>Stopps</span></div><div><b>${pk}</b><span>Pakete</span></div><div><b>${fmtKm(km)}</b><span>Strecke</span></div>${mins > 0 && mins < 1440 ? `<div><b>${fmtDur(mins * 60)}</b><span>unterwegs</span></div>` : ''}</div>
+        <p>${sk.length ? `${sk.length} Stopp${sk.length === 1 ? '' : 's'} übersprungen: <b>${pkBack} Paket${pkBack === 1 ? '' : 'e'}</b> fahren zurück zum Depot.` : 'Alle Stopps sind erledigt. Stark gemacht.'}</p>
+        <div class="done-stats"><div><b>${dl.length}</b><span>Stopps</span></div><div><b>${pk}</b><span>Pakete</span></div><div><b>${fmtKm(km)}</b><span>Strecke</span></div>${mins > 0 && mins < 1440 ? `<div><b>${fmtDur(mins * 60)}</b><span>unterwegs</span></div>` : ''}</div>
         ${route.roundtrip ? `<a class="btn primary wide big" href="${navUrl(d)}" target="_blank" rel="noopener">${ICON.nav} Zurück zum Depot</a>` : ''}
         <button class="btn ${route.roundtrip ? 'ghost' : 'primary'} wide" data-done-act="save">${ICON.flag} Tour beenden &amp; speichern</button>
         <button class="link" data-done-act="close">Später</button>
@@ -1493,13 +1512,14 @@
 
     const n = route.order.length;
     const ordered = route.order.map(stopById);
-    const doneCount = ordered.filter(s => route.done[s.id]).length;
+    const doneCount = ordered.filter(s => route.done[s.id] === true).length;        // zugestellt
+    const skipped = ordered.filter(s => route.done[s.id] === 'skip'), skipCount = skipped.length, pkSkip = skipped.reduce((a, s) => a + (s.pk || 1), 0);
     const totalDist = route.legs.reduce((a, l) => a + l.dist, 0);
     const totalDur = route.legs.reduce((a, l) => a + l.dur, 0);
     const service = serviceSec();
     const anyPk = ordered.some(s => s.pk);
     const pkTotal = ordered.reduce((a, s) => a + (s.pk || 1), 0);
-    const pkDone = ordered.filter(s => route.done[s.id]).reduce((a, s) => a + (s.pk || 1), 0);
+    const pkDone = ordered.filter(s => route.done[s.id] === true).reduce((a, s) => a + (s.pk || 1), 0);
 
     // Ankunftszeiten ab jetzt hochrechnen; legs[i] führt zu Stopp i, legs[n] (nur Rundtour) zurück zum Depot
     const cur = currentIndex();
@@ -1527,10 +1547,11 @@
           <a class="btn" href="${navUrl(s)}" target="_blank" rel="noopener">${ICON.nav} Mit ${app.name} starten</a>
           <button class="btn secondary" data-done="${s.id}">${ICON.check} Erledigt</button>
         </div>
-        <div class="progress"><span style="width:${doneCount / n * 100}%"></span></div>`;
+        <button class="skipbtn" data-skip="${s.id}">${ICON.skip} Überspringen – Pakete nehme ich zurück mit</button>
+        <div class="progress"><span style="width:${(doneCount + skipCount) / n * 100}%"></span></div>`;
     } else {
       nc.innerHTML = `
-        <div class="eyebrow">Alle ${n} Stopps erledigt</div>
+        <div class="eyebrow">${skipCount ? `${doneCount} zugestellt · ${skipCount} übersprungen` : `Alle ${n} Stopps erledigt`}</div>
         <h3>${route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft'}</h3>
         <div class="sub">${route.roundtrip && route.legs[n] ? esc(d.name) + ' · ' + fmtDur(route.legs[n].dur) : 'Starke Arbeit heute.'}</div>
         <div class="next-actions">${route.roundtrip ? `<a class="btn" href="${navUrl(d)}" target="_blank" rel="noopener">${ICON.nav} Zum Depot</a>` : ''}<button class="btn${route.roundtrip ? ' secondary' : ''}" data-finish>${ICON.check} Tour beenden</button></div>
@@ -1538,13 +1559,14 @@
     }
 
     // Übersicht: Kacheln mit Symbol, Wert und Beschriftung
-    const open = n - doneCount, pkLeft = pkTotal - pkDone;
+    const open = n - doneCount - skipCount, pkLeft = pkTotal - pkDone - pkSkip;
     const tile = (ic, val, label, extra = '', cls = '') => `<div class="${cls}"><span class="ic">${ic}</span><dd>${val}</dd><dt>${label}</dt>${extra}</div>`;
     const bar = f => `<div class="bar"><span style="width:${Math.round(f * 100)}%"></span></div>`;
     $('#stats').innerHTML = `
-      <div class="ov-head"><h2>Tour-Überblick</h2><span>${open ? `noch ${open} von ${n} Stopps` : 'alles erledigt'}</span></div>
+      <div class="ov-head"><h2>Tour-Überblick</h2><span>${open ? `noch ${open} von ${n} Stopps` : (skipCount ? 'fertig – Pakete zurück' : 'alles erledigt')}</span></div>
       <dl class="ov tiles">
-        ${tile(ICON.flag, `${doneCount} / ${n}`, 'Stopps erledigt', bar(doneCount / n))}
+        ${tile(ICON.flag, `${doneCount} / ${n}`, 'Stopps zugestellt', bar((doneCount + skipCount) / n))}
+        ${skipCount ? tile(ICON.skip, `${pkSkip} Paket${pkSkip === 1 ? '' : 'e'}`, `zurück zum Depot · ${skipCount} Stopp${skipCount === 1 ? '' : 's'} übersprungen`, '', 'wide skiptile') : ''}
         ${tile(ICON.box, pkLeft, `Paket${pkLeft === 1 ? '' : 'e'} übrig${anyPk ? ` von ${pkTotal}` : ''}`, bar(pkTotal ? pkDone / pkTotal : 0))}
         ${tile(ICON.road, fmtKm(totalDist), 'Strecke gesamt')}
         ${tile(ICON.clock, fmtDur(totalDur), 'Reine Fahrzeit')}
@@ -1554,16 +1576,16 @@
       ${route.saving > 90 ? `<div class="saving">Die optimierte Reihenfolge spart ${fmtDur(route.saving)} Fahrzeit.</div>` : ''}
       ${route.source !== 'osrm' ? '<div class="saving" style="color:var(--warn)">Routing-Dienst nicht erreichbar – Werte geschätzt (Luftlinie)</div>' : ''}`;
     // nur für die Anzeige oben – nicht mitspeichern (sonst wird das Datum beim Neuladen zu Text)
-    Object.defineProperty(route, '_sum', { value: { n, doneCount, pkTotal, pkDone, endAt, totalDist }, enumerable: false, configurable: true, writable: true });
+    Object.defineProperty(route, '_sum', { value: { n, doneCount, skipCount, pkSkip, pkTotal, pkDone, endAt, totalDist }, enumerable: false, configurable: true, writable: true });
 
     // Liste
     const rows = [`<li class="depot"><div class="row-main"><span class="num">${HOME_ICON}</span><div class="txt"><div class="q">${esc(d.name)}</div><div class="meta">Start · ${esc(d.label)}</div></div></div></li>`];
     ordered.forEach((s, i) => {
-      const done = !!route.done[s.id], eta = etas[i];
+      const done = !!route.done[s.id], skip = route.done[s.id] === 'skip', eta = etas[i];
       if (editingId === s.id) { rows.push(`<li class="editing" data-id="${s.id}">${editorHtml(s)}</li>`); return; }
       const [l1, ...l2] = s.label.split(',');
-      const meta = [l2.join(',').trim(), done ? 'erledigt' : (eta ? 'Ankunft ca. ' + fmtTime(eta) + ' Uhr' : ''), s.approx ? 'Hausnr. ungefähr' : '', s.outside ? 'außerhalb (' + s.outside + ')' : ''].filter(Boolean).join(' · ');
-      rows.push(`<li data-id="${s.id}" class="swipe${done ? ' done' : ''}${i === cur ? ' current' : ''}${openId === s.id ? ' open' : ''}${justDone === s.id ? ' just-done' : ''}${newCls(s.id)}">
+      const meta = [l2.join(',').trim(), skip ? 'übersprungen – fährt zurück' : done ? 'erledigt' : (eta ? 'Ankunft ca. ' + fmtTime(eta) + ' Uhr' : ''), s.approx ? 'Hausnr. ungefähr' : '', s.outside ? 'außerhalb (' + s.outside + ')' : ''].filter(Boolean).join(' · ');
+      rows.push(`<li data-id="${s.id}" class="swipe${done ? ' done' : ''}${skip ? ' skipped' : ''}${i === cur ? ' current' : ''}${openId === s.id ? ' open' : ''}${justDone === s.id ? ' just-done' : ''}${newCls(s.id)}">
         <div class="swipe-bg"><span class="l">${ICON.check} ${done ? 'Wieder offen' : 'Erledigt'}</span><span class="r">${ICON.del} Löschen</span></div>
         <div class="row-main">
           <span class="num">${i + 1}</span>${zoneChip(s.id)}
@@ -1573,6 +1595,7 @@
         </div>
         ${openId === s.id ? `<div class="tray">
           <a class="btn primary" href="${navUrl(s)}" target="_blank" rel="noopener">${ICON.nav} ${app.name}</a>
+          <button class="btn ghost" data-skip="${s.id}">${ICON.skip} ${skip ? 'Wieder offen' : 'Überspringen'}</button>
           <button class="btn ghost" data-row="map">${PIN_ICON} Karte</button>
           <button class="btn ghost" data-row="edit">${ICON.edit} Bearbeiten</button>
           <button class="btn ghost danger" data-row="del">${ICON.del} Löschen</button>
@@ -1954,16 +1977,16 @@
   function finishTour() {
     if (!route) return;
     const ordered = route.order.map(stopById).filter(Boolean);
-    const open = ordered.filter(s => !route.done[s.id]).length;
+    const open = ordered.filter(s => !route.done[s.id]).length, skippedL = ordered.filter(s => route.done[s.id] === 'skip');
     if (open && !confirm(`Noch ${open} Stopp${open === 1 ? '' : 's'} offen. Tour trotzdem beenden und speichern?`)) return;
     closeSheet();
     history_.unshift({
       id: uid(), start: route.created, end: Date.now(), depot: settings.depot.name,
-      stops: ordered.length, done: ordered.length - open,
+      stops: ordered.length, done: ordered.length - open - skippedL.length, skip: skippedL.length, pkSkip: skippedL.reduce((a, s) => a + (s.pk || 1), 0),
       pk: ordered.some(s => s.pk) ? ordered.reduce((a, s) => a + (s.pk || 1), 0) : null,
-      pkDone: ordered.filter(s => route.done[s.id]).reduce((a, s) => a + (s.pk || 1), 0),
+      pkDone: ordered.filter(s => route.done[s.id] === true).reduce((a, s) => a + (s.pk || 1), 0),
       dist: Math.round(route.legs.reduce((a, l) => a + l.dist, 0)), dur: Math.round(route.legs.reduce((a, l) => a + l.dur, 0)),
-      list: ordered.map(s => ({ q: s.label, pk: s.pk || null, done: !!route.done[s.id] })),
+      list: ordered.map(s => ({ q: s.label, pk: s.pk || null, done: route.done[s.id] === true, skip: route.done[s.id] === 'skip' })),
     });
     history_ = history_.slice(0, 300);
     save('tp.history', history_);
@@ -2008,11 +2031,12 @@
       <dl class="ov">
         <div><dt>Stopps erledigt</dt><dd>${t.done} von ${t.stops}</dd></div>
         ${t.pk ? `<div><dt>Pakete zugestellt</dt><dd>${t.pkDone} von ${t.pk}</dd></div>` : ''}
+        ${t.skip ? `<div><dt>Zurück ins Depot</dt><dd>${t.pkSkip || 0} Paket${t.pkSkip === 1 ? '' : 'e'} · ${t.skip} Stopp${t.skip === 1 ? '' : 's'}</dd></div>` : ''}
         <div><dt>Strecke</dt><dd>${fmtKm(t.dist)}</dd></div>
         <div><dt>Reine Fahrzeit</dt><dd>${fmtDur(t.dur)}</dd></div>
         <div><dt>Zeitraum</dt><dd>${fmtTime(new Date(t.start))}–${fmtTime(new Date(t.end))} Uhr</dd></div>
       </dl>
-      <ol class="hist-list">${t.list.map(x => `<li class="${x.done ? '' : 'open'}">${esc(x.q)}${x.pk ? ` <i>${pkLabel(x.pk)}</i>` : ''}${x.done ? '' : ' <em>nicht erledigt</em>'}</li>`).join('')}</ol>
+      <ol class="hist-list">${t.list.map(x => `<li class="${x.done ? '' : 'open'}">${esc(x.q)}${x.pk ? ` <i>${pkLabel(x.pk)}</i>` : ''}${x.done ? '' : (x.skip ? ' <em>zurück ins Depot</em>' : ' <em>nicht erledigt</em>')}</li>`).join('')}</ol>
       <div class="row-actions"><button class="btn ghost danger" data-tour-del="${t.id}">Löschen</button><button class="btn ghost" data-hist-back>Zurück</button><button class="btn primary" data-tour-load="${t.id}">Adressen neu laden</button></div>`);
   }
   $('#history-open').onclick = () => { histDay = null; histMonth = null; openHistory(); };
@@ -2043,11 +2067,11 @@
     const bar = $('#tour-bar');
     document.body.classList.toggle('touring', !!route);
     if (!route || !route._sum) { bar.innerHTML = ''; return; }
-    const { n, doneCount, pkTotal, pkDone, endAt } = route._sum;
-    const f = n ? doneCount / n : 0, C = 2 * Math.PI * 22;
+    const { n, doneCount, skipCount = 0, pkSkip = 0, pkTotal, pkDone, endAt } = route._sum;
+    const closed = doneCount + skipCount, f = n ? closed / n : 0, C = 2 * Math.PI * 22;
     bar.innerHTML = `<div class="tb-ring"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" class="bg"/><circle cx="26" cy="26" r="22" class="fg" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - f)}"/></svg><b><span>${doneCount}</span><small>/${n}</small></b></div>
-      <div class="tb-txt"><b>${doneCount === n ? 'Alle Stopps erledigt' : `Noch ${n - doneCount} Stopp${n - doneCount === 1 ? '' : 's'}`}</b>
-        <span>${ICON.box}${pkTotal - pkDone} Paket${pkTotal - pkDone === 1 ? '' : 'e'} übrig</span><span>${ICON.home}zurück ca. ${fmtTime(new Date(endAt))} Uhr</span></div>
+      <div class="tb-txt"><b>${closed === n ? 'Alle Stopps erledigt' : `Noch ${n - closed} Stopp${n - closed === 1 ? '' : 's'}`}</b>
+        <span>${ICON.box}${pkTotal - pkDone - pkSkip} Paket${pkTotal - pkDone - pkSkip === 1 ? '' : 'e'} übrig</span>${skipCount ? `<span class="tb-skip">${ICON.skip}${pkSkip} Paket${pkSkip === 1 ? '' : 'e'} zurück</span>` : ''}<span>${ICON.home}zurück ca. ${fmtTime(new Date(endAt))} Uhr</span></div>
       <button class="tb-end" id="tb-end" aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`;
     $('#tb-end').onclick = () => $('#tour-stop').onclick();
   }

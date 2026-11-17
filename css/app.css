@@ -1198,3 +1198,15 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 .zmodal .vgrid { max-height: 56dvh; overflow: auto; padding: 2px; }
 .zmodal h3.mini { margin: 6px 2px -2px; }
 .zsplit button, .zacc button { font-size: 13px; padding: 9px 4px; }
+
+/* Überspringen */
+.skipbtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 11px 12px; border-radius: 14px; border: 1.5px dashed color-mix(in srgb, currentColor 45%, transparent); background: transparent; color: inherit; font: 600 14px var(--sans); opacity: .9; }
+.skipbtn svg, .tb-skip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; flex: none; }
+.route li.skipped .q, .route li.skipped .meta { color: var(--warn); }
+.route li.skipped .num { background: color-mix(in srgb, var(--warn) 30%, var(--surface-2)); color: var(--text); }
+.route li.skipped .check { background: color-mix(in srgb, var(--warn) 30%, var(--surface-2)); border-color: var(--warn); }
+.tb-skip { color: var(--warn); font-weight: 700; }
+.skiptile { border: 1.5px solid var(--warn); }
+.pin.skipped { background: repeating-linear-gradient(45deg, #b8860b, #b8860b 4px, #d9a526 4px, #d9a526 8px) !important; opacity: .95; }
+.pp-act { flex-wrap: wrap; }
+.pp-act button[data-pin-skip] { flex: 1 1 100%; }

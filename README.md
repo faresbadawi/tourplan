@@ -164,3 +164,8 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Laderaum: Fahrzeugwahl nur noch im Pop-up („Ändern“ in der Fahrzeug-Zeile), das Laderaum-Fenster konzentriert sich auf den Grundriss
 - Bereiche mit Seitentür-Zugang sind standardmäßig rechts/links geteilt (rechts = an der Schiebetür, was zuerst drankommt; links das Spätere)
 - Jeden Bereich kann man selbst unterteilen: Ganz, Rechts/Links oder 4 Felder (rechts/links × vorn/hinten); die Stopp-Liste im Bereichs-Fenster ist nach Feldern gegliedert
+
+## Version 21
+
+- Überspringen: Knopf „Überspringen – Pakete nehme ich zurück mit“ am nächsten Stopp, in der aufgeklappten Zeile und im Fenster am Karten-Punkt. Übersprungene Stopps zählen nicht als zugestellt, kommen nicht mehr in Ankunftszeit, Laderaum und nächsten Stopp, werden gelb markiert und zeigen oben „X Pakete zurück“. Erneutes Tippen macht sie wieder offen (auch „Rückgängig“ im Hinweis)
+- Das Fenster „Geschafft“ nennt die Pakete, die zurück ins Depot fahren; der Verlauf speichert übersprungene Stopps getrennt
