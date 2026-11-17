@@ -257,8 +257,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); box-sh
 .leaflet-container { font-family: var(--sans); background: var(--surface-2); }
 .leaflet-overlay-pane svg { width: auto; height: auto; max-width: none; }
 .leaflet-tile-pane { transition: filter .3s; }
-:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); } }
+.map-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+
 .leaflet-control-attribution { font-size: 10px; }
 
 /* Sheet */
@@ -1056,3 +1056,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .rg-det[open] summary::before { transform: rotate(90deg); }
 .rg-det summary small { display: inline; margin: 0; font-weight: 500; }
 @media (min-width: 960px) { .region-panel { max-height: calc(100% - 48px); } }
+
+/* ============ Version 10 ============ */
+/* Ring oben: feinere Umrandung */
+.tb-ring circle { stroke-width: 3.5; }
+.tb-ring .bg { stroke: var(--border); }
+/* Punkt auf der Karte antippen: Pakete groß */
+.pin-popup .leaflet-popup-content-wrapper { background: var(--surface); color: var(--text); border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 0; }
+.pin-popup .leaflet-popup-content { margin: 14px 16px; min-width: 150px; }
+.pin-popup .leaflet-popup-tip { background: var(--surface); }
+.pin-pop { display: grid; gap: 10px; font-family: var(--sans); }
+.pp-pk { display: flex; align-items: center; gap: 10px; color: var(--accent); }
+.pp-pk svg { width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; flex: none; }
+.pp-pk b { font-size: 44px; line-height: 1; font-weight: 800; color: var(--text); }
+.pp-pk span { font-size: 16px; font-weight: 700; color: var(--muted); align-self: flex-end; padding-bottom: 5px; }
+.pp-adr { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.pp-adr b { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.pin-pop button { border: 0; border-radius: 12px; padding: 9px 12px; background: var(--accent-soft); color: var(--accent); font: 700 14px var(--sans); }

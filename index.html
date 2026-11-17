@@ -242,9 +242,15 @@
           <span class="track"><span class="thumb"></span></span>
           <span>Tour endet wieder am Depot</span>
         </label>
-        <label class="field" style="margin-top:18px"><span>Minuten pro Stopp <em>(für die Ankunftszeit)</em></span>
+        <label class="field" style="margin-top:18px"><span>Minuten pro Stopp <em>(Startwert für die Ankunftszeit)</em></span>
           <input id="s-stopmin" type="number" min="0" max="30" step="1" inputmode="numeric">
         </label>
+        <label class="switch">
+          <input type="checkbox" id="s-autopace">
+          <span class="track"><span class="thumb"></span></span>
+          <span>Mein Tempo automatisch lernen<br><small id="s-pace-info"></small></span>
+        </label>
+        <button class="link" id="s-pace-reset" type="button" hidden>Gelerntes Tempo zurücksetzen</button>
         <label class="switch">
           <input type="checkbox" id="s-pois">
           <span class="track"><span class="thumb"></span></span>

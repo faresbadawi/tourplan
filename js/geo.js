@@ -672,37 +672,34 @@
   const coordStr = pts => pts.map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
 
   /** Fahrzeit-/Distanzmatrix. Fällt auf Luftlinie × 1,35 bei 38 km/h zurück. */
+  /** Fahrzeit-Tabelle. Bis 100 Punkte in einer Anfrage; bis 200 in Blöcken (je 50 × 50); darüber Luftlinie. */
   async function matrix(points) {
-    try {
-      if (points.length > 100) throw new Error('zu viele Punkte');
-      const r = await fetch(`${OSRM}/table/v1/driving/${coordStr(points)}?annotations=duration,distance`, { signal: AbortSignal.timeout(12000) });
+    const n = points.length;
+    const dur = Array.from({ length: n }, () => new Array(n).fill(null)), dist = Array.from({ length: n }, () => new Array(n).fill(null));
+    const table = async idx => {                       // volle Tabelle für eine Teilmenge der Punkte
+      const r = await fetch(`${OSRM}/table/v1/driving/${coordStr(idx.map(i => points[i]))}?annotations=duration,distance`, { signal: AbortSignal.timeout(15000) });
       const j = await r.json();
       if (j.code !== 'Ok') throw new Error(j.code);
-      const n = points.length;
-      const dur = [], dist = [];
-      for (let i = 0; i < n; i++) {
-        dur.push([]); dist.push([]);
-        for (let k = 0; k < n; k++) {
-          dur[i][k] = j.durations[i][k] ?? fallbackLeg(points[i], points[k]).dur;
-          dist[i][k] = j.distances ? (j.distances[i][k] ?? fallbackLeg(points[i], points[k]).dist) : fallbackLeg(points[i], points[k]).dist;
-        }
+      idx.forEach((gi, a) => idx.forEach((gk, c) => {
+        if (j.durations[a][c] != null) dur[gi][gk] = j.durations[a][c];
+        if (j.distances && j.distances[a][c] != null) dist[gi][gk] = j.distances[a][c];
+      }));
+    };
+    let source = 'osrm';
+    try {
+      if (n > 200) throw new Error('zu viele Punkte');
+      if (n <= 100) await table(points.map((_, i) => i));
+      else {
+        const chunks = []; for (let i = 0; i < n; i += 50) chunks.push(Array.from({ length: Math.min(50, n - i) }, (_, k) => i + k));
+        for (let a = 0; a < chunks.length; a++) for (let c = a + 1; c < chunks.length; c++) await table(chunks[a].concat(chunks[c]));
+        if (chunks.length === 1) await table(chunks[0]);
       }
-      return { dur, dist, source: 'osrm' };
-    } catch (e) {
-      const n = points.length, dur = [], dist = [];
-      for (let i = 0; i < n; i++) {
-        dur.push([]); dist.push([]);
-        for (let k = 0; k < n; k++) { const l = fallbackLeg(points[i], points[k]); dur[i][k] = l.dur; dist[i][k] = l.dist; }
-      }
-      return { dur, dist, source: 'luftlinie' };
+    } catch (e) { source = 'luftlinie'; }
+    for (let i = 0; i < n; i++) for (let k = 0; k < n; k++) {
+      if (dur[i][k] == null || dist[i][k] == null) { const l = fallbackLeg(points[i], points[k]); if (dur[i][k] == null) dur[i][k] = l.dur; if (dist[i][k] == null) dist[i][k] = l.dist; }
     }
+    return { dur, dist, source };
   }
-  function fallbackLeg(a, b) {
-    const d = haversine(a.lat, a.lon, b.lat, b.lon) * 1.35;
-    return { dist: d, dur: d / (38 / 3.6) };
-  }
-
-  /** Straßengeometrie + Etappen für eine feste Reihenfolge. */
   async function route(points) {
     const legs = [], geometry = [];
     const CH = 80;

@@ -87,3 +87,11 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Gebiet wählen: Kreis bleibt immer ganz sichtbar, Griff am Kreisrand zum Ziehen, kleineres Bedienfeld, Orte einklappbar
 - Offline-Karte: bis zu 900 Kartenteile (mehr Details), Karte und Straßenverzeichnis laden gleichzeitig
 - Straßen und Hausnummern laden parallel; antwortet der Hauptserver nach 10 Sekunden nicht, springen Ersatzserver ein
+
+## Version 10
+
+- Tempo lernen: aus den Abständen zwischen dem Abhaken (minus Fahrzeit) lernt die App deine Zeit pro Stopp und rechnet Ankunftszeiten damit; im Überblick stehen Pakete pro Stunde. Abschaltbar und zurücksetzbar unter „Tour & Navigation“
+- Bis zu 300 Stopps pro Tour (echte Fahrzeiten bis 200 Stopps, darüber Luftlinie für die Sortierung)
+- Karte hell oder dunkel unabhängig vom App-Design wählbar (Ebenen-Knopf auf der Karte)
+- Stopp-Punkt auf der Karte antippen zeigt groß die Paketzahl mit Paket-Symbol
+- Feinerer Fortschrittsring oben

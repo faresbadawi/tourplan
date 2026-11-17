@@ -304,6 +304,8 @@
     tomtom: { name: 'TomTom', filter: false, attr: '&copy; TomTom',
       url: dark => `https://api.tomtom.com/map/1/tile/basic/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png?key=${encodeURIComponent(settings.tomtom)}` },
   };
+  /** Karte hell oder dunkel – unabhängig vom Design der App wählbar */
+  const mapDark = () => settings.mapMode === 'dark' ? true : settings.mapMode === 'light' ? false : isDark();
   const mapStyle = () => (MAP_STYLES[settings.mapStyle] && (settings.mapStyle !== 'tomtom' || settings.tomtom)) ? settings.mapStyle : 'de';
   const Map_ = {
     map: null, tiles: null, layers: null, poiLayer: null, me: null, full: false, lastFit: '',
@@ -336,7 +338,8 @@
     setTiles() {
       if (!this.map) return;
       if (this.tiles) this.tiles.remove();
-      const st = MAP_STYLES[mapStyle()], dark = isDark();
+      const st = MAP_STYLES[mapStyle()], dark = mapDark();
+      $('#map').classList.toggle('map-dark', dark && !!st.filter);
       // Standard-OSM wird im Dunkelmodus per CSS-Filter abgedunkelt, die anderen Stile haben eigene dunkle Kacheln
       $('#map').classList.toggle('no-filter', !st.filter);
       this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, maxNativeZoom: !navigator.onLine && settings.region && settings.region.z && settings.region.style === mapStyle() ? settings.region.z : 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(this.map);
@@ -361,13 +364,14 @@
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 
       if (route) {
-        L.polyline(route.geometry, { color: isDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
+        L.polyline(route.geometry, { color: mapDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
         L.polyline(route.geometry, { color: accent, weight: 6, opacity: .95 }).addTo(this.layers);
         const cur = currentIndex();
         route.order.forEach((id, i) => {
           const s = stopById(id); if (!s) return;
           const cls = route.done[id] ? 'done' : (i === cur ? 'current' : '');
-          const mk = this.pin(s, i + 1, cls).bindTooltip(esc(s.label)).on('click', () => focusRouteItem(id)).addTo(this.layers);
+          const pk = s.pk || 1;
+          const mk = this.pin(s, i + 1, cls).bindPopup(`<div class="pin-pop"><div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span></div><div class="pp-adr"><b>Stopp ${i + 1}</b>${esc(s.label.split(',')[0])}</div><button type="button" data-pin-focus="${id}">In der Liste zeigen</button></div>`, { closeButton: false, offset: [0, -12], className: 'pin-popup', autoPanPadding: [30, 90] }).addTo(this.layers);
           this.pinEls[id] = mk.getElement() && mk.getElement().firstElementChild;
           if (cls === 'current') mk.setZIndexOffset(1000);
           bounds.push([s.lat, s.lon]);
@@ -466,6 +470,7 @@
     },
   };
   const MAIL_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3.5 7.5 12 13l8.5-5.5"/></svg>';
+  $('#map').addEventListener('click', e => { const b = e.target.closest('[data-pin-focus]'); if (b) { Map_.map.closePopup(); focusRouteItem(b.dataset.pinFocus); } });
   $('#map-tap').onclick = () => Map_.setFull(true);
   $('#map-full').onclick = () => Map_.setFull(true);
   $('#map-close').onclick = () => Map_.setFull(false);
@@ -557,12 +562,16 @@
   function openLayerSheet() {
     const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
     openSheet('Karte', `<div class="menu">${keys.map(k => `<button class="menu-item${mapStyle() === k ? ' now' : ''}" data-style="${k}">${ICON.route}<span><b>${MAP_STYLES[k].name}</b><small>${STYLE_INFO[k]}</small></span>${mapStyle() === k ? ICON.check : ''}</button>`).join('')}</div>
+      <h3 class="mini">Karte hell oder dunkel</h3>
+      <div class="segmented" id="ly-mode">${[['auto', 'Wie die App'], ['light', 'Hell'], ['dark', 'Dunkel']].map(([k, v]) => `<button data-mapmode="${k}" aria-pressed="${(settings.mapMode || 'auto') === k}">${v}</button>`).join('')}</div>
       <h3 class="mini">Mein Standort als</h3>
       <div class="me-choices">${Object.entries(ME_ICONS).map(([k, v]) => `<button data-meicon="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}"><span class="me-prev">${v.svg}</span>${v.name}</button>`).join('')}</div>`);
   }
   $('#sheet-body').addEventListener('click', e => {
     const st = e.target.closest('[data-style]');
     if (st) { settings.mapStyle = st.dataset.style; persist(); Map_.setTiles(); closeSheet(); return; }
+    const mm = e.target.closest('[data-mapmode]');
+    if (mm) { settings.mapMode = mm.dataset.mapmode; persist(); Map_.setTiles(); Map_.lastFit = ''; Map_.render(); document.querySelectorAll('[data-mapmode]').forEach(b => b.setAttribute('aria-pressed', b === mm)); return; }
     const mi = e.target.closest('[data-meicon]');
     if (mi) { settings.meIcon = mi.dataset.meicon; persist(); Me.redraw(); document.querySelectorAll('[data-meicon]').forEach(b => b.setAttribute('aria-pressed', b === mi)); }
   });
@@ -581,7 +590,7 @@
       if (!route) return new Date();
       const cur = currentIndex(), n = route.order.length;
       const doneShare = cur === -1 ? 1 : cur / Math.max(1, n);
-      const total = route.legs.reduce((a, l) => a + l.dur, 0) + n * (settings.stopMin || 0) * 60;
+      const total = route.legs.reduce((a, l) => a + l.dur, 0) + n * serviceSec();
       return new Date(Date.now() + Math.max(0, p.at - doneShare) * total * 1000);
     },
     state(p) { return Geo.openState(p.hours, this.passTime(p)); },
@@ -605,6 +614,7 @@
   const stopById = id => stops.find(s => s.id === id);
   const seenIds = new Set();
   let geoWorkers = 0;
+  const fmtNum1 = x => (Math.round(x * 10) / 10).toLocaleString('de-DE');
   const pkLabel = n => `${n} Paket${n === 1 ? '' : 'e'}`;
   const lineOf = s => s.query + (s.pk ? ', ' + pkLabel(s.pk) : '');
 
@@ -734,6 +744,29 @@
     home: '<svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20H3z"/><path d="M9.5 20v-5h5v5"/></svg>',
     spark: '<svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>',
   };
+  /* Dein Tempo: gelernt aus den Abständen zwischen dem Abhaken (abzüglich Fahrzeit) */
+  const paceOk = () => settings.autoPace !== false && settings.pace && settings.pace.n >= 3;
+  const serviceSec = () => paceOk() ? settings.pace.sec : (settings.stopMin || 0) * 60;
+  function learnPace(id) {
+    if (settings.autoPace === false || !route || !route.doneAt) return;
+    const i = route.order.indexOf(id), prevId = route.order[i - 1], now = route.doneAt[id];
+    const prevT = i > 0 ? route.doneAt[prevId] : null;        // nur wenn der Stopp direkt davor auch gerade abgehakt wurde
+    if (!prevT || !route.legs[i]) return;
+    const sample = (now - prevT) / 1000 - route.legs[i].dur;
+    if (sample < 10 || sample > 900) return;                   // Pausen, Nachträge und Vertipper zählen nicht
+    const p = settings.pace || { sec: sample, n: 0 };
+    p.sec = Math.round(p.n ? p.sec * .8 + sample * .2 : sample); p.n = Math.min(999, p.n + 1);
+    settings.pace = p;
+  }
+  /** Pakete pro Stunde in dieser Tour (ab dem ersten Abhaken) */
+  function pkPerHour() {
+    if (!route || !route.doneAt) return null;
+    const ts = Object.entries(route.doneAt).filter(([id]) => route.done[id]).sort((a, b) => a[1] - b[1]);
+    if (ts.length < 3) return null;
+    const span = (ts[ts.length - 1][1] - ts[0][1]) / 3600000; if (span < .05) return null;
+    const pk = ts.slice(1).reduce((a, [id]) => { const st = stopById(id); return a + (st ? st.pk || 1 : 0); }, 0);
+    return Math.round(pk / span);
+  }
   const pkCount = list => list.reduce((a, s) => a + (s.pk || 1), 0);
   const pkPill = s => s.pk ? `<span class="pk" title="${pkLabel(s.pk)}">${ICON.box}${s.pk}<i>${s.pk === 1 ? 'Paket' : 'Pakete'}</i></span>` : '';
   const newCls = id => { if (seenIds.has(id)) return ''; seenIds.add(id); return ' new'; };
@@ -1162,7 +1195,7 @@
     const depot = settings.depot;
     const ok = stops.filter(s => s.status === 'ok');
     if (!ok.length) { route = null; persist(); renderStops(); renderResult(); return; }
-    if (ok.length > 99) return toast('Maximal 99 Stopps pro Tour');
+    if (ok.length > 300) return toast('Maximal 300 Stopps pro Tour');
     planning = true; setBusy(true);
     const prev = route, first = !prev;
     try {
@@ -1184,7 +1217,7 @@
         const D = Array.from({ length: n + 1 }, (_, i) => M.dur[i].slice(0, n + 1));
         if (backIdx) for (let i = 1; i <= n; i++) D[i][0] = M.dur[i][backIdx];
         const naive = Optimize.tourCost(rest.map((_, i) => i + 1), D, settings.roundtrip);
-        const { order, cost } = Optimize.solve(D, settings.roundtrip);
+        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 5000 : n > 80 ? 3000 : 1500);
         rest = order.map(i => rest[i - 1]);
         source = M.source;
         if (first) saving = Math.max(0, naive - cost);
@@ -1196,6 +1229,7 @@
         order: ordered.map(s => s.id), legs: R.legs, geometry: R.geometry,
         source: R.source === 'osrm' && source === 'osrm' ? 'osrm' : 'luftlinie',
         saving, done, created: prev ? prev.created : Date.now(), roundtrip: settings.roundtrip,
+        doneAt: prev && prev.doneAt ? prev.doneAt : {},
       };
       persist(); renderStops(); renderResult();
       if (gpsNote) { toast(gpsNote, 3200); gpsNote = ''; }
@@ -1225,9 +1259,10 @@
 
   function toggleDone(id) {
     if (!route || !stopById(id)) return;
-    if (route.done[id]) { delete route.done[id]; Sfx.uncheck(); }
+    if (route.done[id]) { delete route.done[id]; if (route.doneAt) delete route.doneAt[id]; Sfx.uncheck(); }
     else {
       route.done[id] = true; justDone = id;
+      (route.doneAt = route.doneAt || {})[id] = Date.now(); learnPace(id);
       if (route.order.every(x => route.done[x])) Sfx.done(); else Sfx.check();
     }
     if (openId === id) openId = null;
@@ -1300,7 +1335,7 @@
     const doneCount = ordered.filter(s => route.done[s.id]).length;
     const totalDist = route.legs.reduce((a, l) => a + l.dist, 0);
     const totalDur = route.legs.reduce((a, l) => a + l.dur, 0);
-    const service = (settings.stopMin || 0) * 60;
+    const service = serviceSec();
     const anyPk = ordered.some(s => s.pk);
     const pkTotal = ordered.reduce((a, s) => a + (s.pk || 1), 0);
     const pkDone = ordered.filter(s => route.done[s.id]).reduce((a, s) => a + (s.pk || 1), 0);
@@ -1352,6 +1387,7 @@
         ${tile(ICON.box, pkLeft, `Paket${pkLeft === 1 ? '' : 'e'} übrig${anyPk ? ` von ${pkTotal}` : ''}`, bar(pkTotal ? pkDone / pkTotal : 0))}
         ${tile(ICON.road, fmtKm(totalDist), 'Strecke gesamt')}
         ${tile(ICON.clock, fmtDur(totalDur), 'Reine Fahrzeit')}
+        ${(() => { const h = pkPerHour(); return paceOk() || h ? tile(ICON.spark, h ? `${h} Pakete/Std` : `${fmtNum1(settings.pace.sec / 60)} Min`, paceOk() ? `Dein Tempo · ${fmtNum1(settings.pace.sec / 60)} Min pro Stopp` : 'Dein Tempo in dieser Tour', '', 'wide') : ''; })()}
         ${tile(ICON.home, `ca. ${fmtTime(endAt)} Uhr`, route.roundtrip ? 'Zurück am Depot' : 'Tour zu Ende', '', 'wide')}
       </dl>
       ${route.saving > 90 ? `<div class="saving">Die optimierte Reihenfolge spart ${fmtDur(route.saving)} Fahrzeit.</div>` : ''}
@@ -1736,8 +1772,8 @@
       }
       if (this.tiles) this.tiles.remove();
       const st = MAP_STYLES[mapStyle()];
-      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(isDark()) : st.url, { maxZoom: 19, subdomains: 'abc', attribution: st.attr }).addTo(this.map);
-      $('#region-map').classList.toggle('no-filter', !st.filter);
+      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(mapDark()) : st.url, { maxZoom: 19, subdomains: 'abc', attribution: st.attr }).addTo(this.map);
+      $('#region-map').classList.toggle('no-filter', !st.filter); $('#region-map').classList.toggle('map-dark', mapDark() && !!st.filter);
       setTimeout(() => { this.map.invalidateSize(); this.map.setView(this.center, this.zoomFor()); this.setCenter(this.center); this.fit(); }, 30);
       $('#rg-status').textContent = ''; $('#rg-progress').hidden = true; $('#rg-save').disabled = false;
     },
@@ -1926,6 +1962,10 @@
     $('#s-pois').checked = settings.pois;
     $('#s-sound').checked = settings.sound;
     $('#s-stopmin').value = settings.stopMin;
+    $('#s-autopace').checked = settings.autoPace !== false;
+    $('#s-pace-info').textContent = settings.pace && settings.pace.n ? `Gelernt: ${fmtNum1(settings.pace.sec / 60)} Min pro Stopp (aus ${settings.pace.n} Stopps)${settings.pace.n < 3 ? ' – gilt ab 3 Stopps' : ''}` : 'Noch nichts gelernt – nach den ersten Stopps rechnet die App mit deinem Tempo.';
+    $('#s-pace-reset').hidden = !(settings.pace && settings.pace.n);
+    $('#s-pace-reset').onclick = () => { delete settings.pace; persist(); $('#s-pace-info').textContent = 'Zurückgesetzt.'; $('#s-pace-reset').hidden = true; if (route) renderResult(); };
     renderNavChoices($('#s-nav'), true);
     renderThemeChoices($('#s-theme'));
     renderAccentChoices($('#s-accent'));
@@ -1973,6 +2013,7 @@
     settings.pois = $('#s-pois').checked;
     settings.sound = $('#s-sound').checked;
     settings.stopMin = Math.max(0, Math.min(30, +$('#s-stopmin').value || 0));
+    settings.autoPace = $('#s-autopace').checked;
     if ($('#s-area [data-place]')) { const a = readAreaChips($('#s-area')); settings.area = a; settings.areaAuto = false; settings.areaOk = true; }
     settings.tomtom = $('#s-tomtom').value.trim();
     settings.aiKey = $('#s-ai-key').value.trim();
