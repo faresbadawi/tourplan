@@ -79,3 +79,11 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Großer Hinweis, wenn Adressen nicht gefunden wurden oder mehrdeutig sind; „Jetzt korrigieren“ springt direkt zur Straße und öffnet die Korrektur
 - Nie seitlich scrollen: lange Straßennamen und alle Menüs (auch Einstellungen) brechen um und passen in die Bildschirmbreite
 - Altes Symbol und alte Farben bleiben
+
+## Version 9
+
+- Neues App-Symbol (gelber Lieferwagen mit Standort-Pin in den App-Farben), auch als Startbild beim Öffnen und als Logo oben
+- Farbwahl in „Darstellung & Karte“: Blau, Gelb-Orange, Rot oder Grün
+- Gebiet wählen: Kreis bleibt immer ganz sichtbar, Griff am Kreisrand zum Ziehen, kleineres Bedienfeld, Orte einklappbar
+- Offline-Karte: bis zu 900 Kartenteile (mehr Details), Karte und Straßenverzeichnis laden gleichzeitig
+- Straßen und Hausnummern laden parallel; antwortet der Hauptserver nach 10 Sekunden nicht, springen Ersatzserver ein

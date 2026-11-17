@@ -365,19 +365,19 @@
       if (!valid(t)) throw new Error('leer');
       return t;
     };
+    // Hauptserver zuerst; antwortet er nach 10 Sekunden nicht, fragen wir zusätzlich die Ersatzserver.
+    // Die erste gültige Antwort gewinnt – so wartet man nicht minutenlang auf einen überlasteten Server.
     const MAIN = 'https://overpass-api.de/api/interpreter';
-    for (const wait of [0, 8000]) {
-      if (wait) await new Promise(r => setTimeout(r, wait));
-      try { return await get(MAIN, AbortSignal.timeout(100000)); } catch (_) {}
-    }
-    // Hauptserver gestört → Ersatzserver gleichzeitig fragen, der erste gültige gewinnt
+    const mirrors = ['https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
     const ctl = new AbortController(), stop = setTimeout(() => ctl.abort(), 120000);
-    const mirrors = ['https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-    try { return await Promise.any(mirrors.map(u => get(u, ctl.signal))); }
+    const later = (ms, url) => new Promise((res, rej) => {
+      const t = setTimeout(() => get(url, ctl.signal).then(res, rej), ms);
+      ctl.signal.addEventListener('abort', () => { clearTimeout(t); rej(new Error('abbruch')); });
+    });
+    try { return await Promise.any([get(MAIN, ctl.signal), later(10000, mirrors[0]), later(10000, mirrors[1]), later(25000, mirrors[2])]); }
     catch (_) { return null; }
     finally { clearTimeout(stop); ctl.abort(); }
   }
-
   async function loadStreets(depot, force, radius = STREET_RADIUS) {
     if (!depot) return null;
     if (!force && streets && haversine(depot.lat, depot.lon, streets.lat, streets.lon) < 1500 && (streets.r || STREET_RADIUS) === radius && Date.now() - streets.ts < 30 * 864e5) return streetCount();

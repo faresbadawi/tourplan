@@ -208,8 +208,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); box-sh
 
 /* Result */
 .next-card { background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #0050A0)); color: #fff; border: 0; }
-:root[data-theme="dark"] .next-card { color: var(--accent-ink); background: linear-gradient(140deg, var(--accent-glow), #1E9FD8); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme]) .next-card { color: var(--accent-ink); background: linear-gradient(140deg, var(--accent-glow), #1E9FD8); } }
+:root[data-theme="dark"] .next-card { color: var(--accent-ink); background: linear-gradient(140deg, var(--accent-glow), var(--accent-2)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) .next-card { color: var(--accent-ink); background: linear-gradient(140deg, var(--accent-glow), var(--accent-2)); } }
 .next-card .eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; opacity: .8; }
 .next-card h3 { font-size: 26px; margin: 6px 0 2px; line-height: 1.2; }
 .next-card .sub { opacity: .85; font-size: 14px; }
@@ -1012,3 +1012,47 @@ html, body { max-width: 100%; overflow-x: hidden; }
 /* Zur Sicherheit: Einstellungen nie breiter als der Bildschirm */
 #settings .sheet, .settings-sheet { width: 100%; max-width: 100vw; box-sizing: border-box; }
 #settings .s-page > *, #settings .s-menu > * { max-width: 100%; box-sizing: border-box; }
+
+/* ============ Version 9: Farbwahl, Startbild, Logo, Gebietsauswahl ============ */
+/* Farben zum Auswählen (Blau ist Standard) */
+:root[data-accent="yellow"] { --accent: #D98A00; --accent-2: #B56A00; --accent-soft: #FFF1CC; --accent-ink: #1F1400; --accent-glow: #FFCC00; }
+:root[data-accent="red"]    { --accent: #D9363E; --accent-2: #A8232B; --accent-soft: #FCE4E5; --accent-ink: #FFFFFF; --accent-glow: #FF7A7A; }
+:root[data-accent="green"]  { --accent: #12905A; --accent-2: #0B6B42; --accent-soft: #DDF5E9; --accent-ink: #FFFFFF; --accent-glow: #2FD08E; }
+:root[data-theme="dark"][data-accent="yellow"] { --accent: #FFCC00; --accent-2: #FF9D00; --accent-soft: #3A2C05; --accent-ink: #241800; --accent-glow: #FFD84D; }
+:root[data-theme="dark"][data-accent="red"]    { --accent: #FF7A7A; --accent-2: #E8444C; --accent-soft: #3A1517; --accent-ink: #2A0608; --accent-glow: #FF9C9C; }
+:root[data-theme="dark"][data-accent="green"]  { --accent: #2FD08E; --accent-2: #12A46B; --accent-soft: #0F3325; --accent-ink: #04281A; --accent-glow: #5BE3AC; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-accent="yellow"] { --accent: #FFCC00; --accent-2: #FF9D00; --accent-soft: #3A2C05; --accent-ink: #241800; --accent-glow: #FFD84D; }
+  :root:not([data-theme="light"])[data-accent="red"]    { --accent: #FF7A7A; --accent-2: #E8444C; --accent-soft: #3A1517; --accent-ink: #2A0608; --accent-glow: #FF9C9C; }
+  :root:not([data-theme="light"])[data-accent="green"]  { --accent: #2FD08E; --accent-2: #12A46B; --accent-soft: #0F3325; --accent-ink: #04281A; --accent-glow: #5BE3AC; }
+}
+.accent-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.accent-row button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 16px; border: 2px solid transparent; background: var(--surface-2); color: var(--muted); font-size: 12.5px; font-weight: 600; min-width: 0; }
+.accent-row button i { width: 30px; height: 30px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 3px rgba(255,255,255,.55); }
+.accent-row button span { overflow-wrap: anywhere; text-align: center; line-height: 1.15; }
+.accent-row button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+
+/* Startbild */
+.splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--bg); transition: opacity .4s ease, visibility .4s; }
+.splash img { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 14px 40px rgba(10,132,214,.35); animation: splashpop .5s cubic-bezier(.3,1.5,.5,1); }
+.splash b { font: 800 26px/1 var(--sans); letter-spacing: -.03em; color: var(--text); }
+.splash.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+@keyframes splashpop { from { transform: scale(.7); opacity: 0; } }
+
+/* Logo oben und in der Einrichtung */
+.brand-logo { width: 30px; height: 30px; border-radius: 9px; display: block; flex: none; }
+.ob-mark { background: none; padding: 0; }
+.ob-mark img { width: 56px; height: 56px; border-radius: 16px; display: block; }
+
+/* Gebietsauswahl: mehr Karte, Griff am Kreisrand */
+.region-panel { max-height: 46%; padding-top: 14px; }
+.region-panel #rg-hint { margin: 4px 0 8px; }
+.rg-handle { width: 44px; height: 44px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); box-shadow: 0 4px 14px rgba(0,0,0,.35); display: grid; place-items: center; cursor: ew-resize; touch-action: none; }
+.rg-handle svg { width: 24px; height: 24px; fill: none; stroke: var(--accent-2); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.rg-det { margin: 6px 0 2px; }
+.rg-det summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 8px 0; list-style: none; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rg-det summary::-webkit-details-marker { display: none; }
+.rg-det summary::before { content: "›"; font-size: 18px; color: var(--accent); transition: transform .2s; display: inline-block; }
+.rg-det[open] summary::before { transform: rotate(90deg); }
+.rg-det summary small { display: inline; margin: 0; font-weight: 500; }
+@media (min-width: 960px) { .region-panel { max-height: calc(100% - 48px); } }

@@ -5,7 +5,7 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   /* ---------- Zustand ---------- */
-  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, mapStyle: 'de', area: null, tomtom: '', meIcon: 'arrow' };
+  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'de', area: null, tomtom: '', meIcon: 'arrow' };
   const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
@@ -54,6 +54,7 @@
   function applyTheme() {
     const root = document.documentElement;
     if (settings.theme === 'auto') root.removeAttribute('data-theme'); else root.dataset.theme = settings.theme;
+    root.dataset.accent = ACCENTS[settings.accent] ? settings.accent : 'blue';
     document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute('content', isDark() ? '#080E19' : '#EDF1F6'));
     Map_.setTiles();
   }
@@ -146,6 +147,15 @@
       const b = e.target.closest('[data-ms]'); if (!b) return;
       el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
       settings.mapStyle = b.dataset.ms; persist(); Map_.setTiles();
+    };
+  }
+  const ACCENTS = { blue: ['Blau', '#1EA7F0'], yellow: ['Gelb-Orange', '#FFB400'], red: ['Rot', '#F0555C'], green: ['Grün', '#22B573'] };
+  function renderAccentChoices(el) {
+    el.innerHTML = Object.entries(ACCENTS).map(([k, [name, col]]) => `<button type="button" data-accent-opt="${k}" aria-pressed="${(settings.accent || 'blue') === k}" aria-label="${name}" title="${name}"><i style="background:${col}"></i><span>${name}</span></button>`).join('');
+    el.onclick = e => {
+      const b = e.target.closest('[data-accent-opt]'); if (!b) return;
+      el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+      settings.accent = b.dataset.accentOpt; applyTheme(); persist(); Map_.lastFit = ''; Map_.render(true);
     };
   }
   function renderThemeChoices(el) {
@@ -1652,13 +1662,16 @@
     if (!settings.depot || indexState === 'loading' || indexState === 'addr') return;
     indexState = 'loading'; renderIndexInfo(); renderGreeting();
     const C = regionCenter(), R = regionR();
+    // Straßen und Hausnummern gleichzeitig laden (halbiert die Wartezeit)
+    const addrJob = Geo.loadAddresses(C, force, R).then(() => null, e => e || new Error('addr'));
     try { await Geo.loadStreets(C, force, R); indexState = ''; }
     catch (_) { indexState = 'error'; }
     applyArea(); renderAreaCard(); renderStops();
-    if (indexState !== 'error') {
-      indexState = 'addr'; renderIndexInfo(); renderGreeting();
-      try { await Geo.loadAddresses(C, force, R); indexState = ''; }
-      catch (_) { indexState = 'addr-error'; }
+    const streetsFailed = indexState === 'error';
+    indexState = 'addr'; renderIndexInfo(); renderGreeting();
+    const addrErr = await addrJob;
+    indexState = streetsFailed ? 'error' : addrErr ? 'addr-error' : '';
+    if (!addrErr) {
       // schon eingetragene, nur ungefähr gefundene Adressen jetzt exakt setzen
       let better = 0;
       stops.forEach(s => { if (s.status !== 'ok' || !s.approx) return; const r = Geo.addrLookup(s.query, settings.depot); if (r) { Object.assign(s, { lat: r.lat, lon: r.lon, label: r.label, approx: false }); better++; } });
@@ -1695,12 +1708,12 @@
     }
     return out;
   }
-  // Fair gegenüber den freien Kartendiensten: höchstens 250 Kacheln ab Zoomstufe 13 (Nutzungsregeln von OpenStreetMap)
+  // Fair gegenüber den freien Kartendiensten: höchstens 900 Kacheln ab Zoomstufe 13 (Nutzungsregeln von OpenStreetMap)
   function tilePlan(lat, lon, rM) {
     let list = tilesFor(lat, lon, rM, 10).concat(tilesFor(lat, lon, rM, 11), tilesFor(lat, lon, rM, 12)), maxZ = 12, big = 0;
     for (let z = 13; z <= 16; z++) {
       const t = tilesFor(lat, lon, rM, z);
-      if (big + t.length > 250) break;
+      if (big + t.length > 900) break;
       big += t.length; list = list.concat(t); maxZ = z;
     }
     return { list, maxZ };
@@ -1718,7 +1731,7 @@
       this.r = settings.region ? Math.round(settings.region.r / 1000) : 8;
       $('#rg-range').value = this.r;
       if (!this.map) {
-        this.map = L.map($('#region-map'), { zoomControl: false });
+        this.map = L.map($('#region-map'), { zoomControl: false, zoomSnap: .25 });
         this.map.on('click', e => this.setCenter(e.latlng, true));
       }
       if (this.tiles) this.tiles.remove();
@@ -1729,17 +1742,34 @@
       $('#rg-status').textContent = ''; $('#rg-progress').hidden = true; $('#rg-save').disabled = false;
     },
     close() { $('#region').hidden = true; document.body.classList.remove('map-full'); },
-    fit() { if (this.circle) this.map.fitBounds(this.circle.getBounds(), { padding: [30, 30], paddingBottomRight: [0, Math.round(innerHeight * .45)] }); },
+    fit() {                         // Kreis immer ganz im sichtbaren Teil der Karte (über dem Bedienfeld)
+      if (!this.circle) return;
+      const side = innerWidth >= 960, ph = $('.region-panel').offsetHeight;
+      this.map.fitBounds(this.circle.getBounds(), { animate: false, paddingTopLeft: [28, 76], paddingBottomRight: side ? [440, 28] : [28, ph + 24] });
+    },
+    placeHandle() {                 // Griff am rechten Kreisrand
+      if (!this.handle || !this.center) return;
+      const c = this.center, dLon = this.r * 1000 / (111320 * Math.cos(c.lat * Math.PI / 180));
+      this.handle.setLatLng([c.lat, c.lng + dLon]);
+    },
     setCenter(ll, fromTap) {
       this.center = ll;
       const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
       if (!this.pin) {
         this.pin = L.marker(ll, { draggable: true, icon: L.divIcon({ className: '', html: '<div class="rg-pin"></div>', iconSize: [34, 34], iconAnchor: [17, 17] }) }).addTo(this.map);
         this.pin.on('drag', e => { this.center = e.target.getLatLng(); this.update(); });
-        this.pin.on('dragend', () => this.update(true));
+        this.pin.on('dragend', () => { this.update(true); this.fit(); });
       } else this.pin.setLatLng(ll);
       if (!this.circle) this.circle = L.circle(ll, { radius: this.r * 1000, color, weight: 3, fillColor: color, fillOpacity: .12, interactive: false }).addTo(this.map);
       this.circle.setLatLng(ll);
+      if (!this.handle) {            // Rand anfassen und ziehen = Umkreis größer oder kleiner
+        this.handle = L.marker(ll, { draggable: true, zIndexOffset: 500, icon: L.divIcon({ className: '', html: '<div class="rg-handle"><svg viewBox="0 0 24 24"><path d="M8 7 3 12l5 5M16 7l5 5-5 5M3 12h18"/></svg></div>', iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(this.map);
+        this.handle.on('drag', e => {
+          this.r = Math.max(1, Math.min(20, Math.round(this.map.distance(this.center, e.target.getLatLng()) / 1000)));
+          $('#rg-range').value = this.r; this.circle.setRadius(this.r * 1000); $('#rg-r').textContent = this.r + ' km';
+        });
+        this.handle.on('dragend', () => { this.update(true); this.fit(); });
+      }
       if (fromTap) { this.circle.setRadius(1); this.grow(); if (navigator.vibrate) navigator.vibrate(10); }   // Kreis „zieht sich auf“
       else this.update(true);
     },
@@ -1748,7 +1778,7 @@
       const step = now => {
         const f = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - f, 3);
         this.circle.setRadius(Math.max(1, target * e));
-        if (f < 1) requestAnimationFrame(step); else this.update(true);
+        if (f < 1) requestAnimationFrame(step); else { this.update(true); this.fit(); }
       };
       requestAnimationFrame(step);
     },
@@ -1758,12 +1788,13 @@
       const c = this.center, rM = this.r * 1000;
       this.circle.setLatLng(c).setRadius(rM);
       $('#rg-r').textContent = this.r + ' km';
+      this.placeHandle();
       if (!full) return;
       const covered = Geo.streetsCover(c.lat, c.lng, rM);
       const pl = covered ? Geo.placesInCircle(c.lat, c.lng, rM) : [];
       const sel = new Set(settings.area || []);
       $('#rg-places').innerHTML = covered
-        ? (pl.length ? `<small>${pl.length} Orte im Kreis – antippen zum Abwählen</small><div class="area-chips">${pl.map(p => `<button type="button" data-place="${esc(p.name)}" aria-pressed="${!settings.area || sel.has(p.name) || !settings.region ? 'true' : 'false'}">${esc(p.name)}<small>${p.count} Str.</small></button>`).join('')}</div>` : '<small>Keine Orte im Kreis.</small>')
+        ? (pl.length ? `<details class="rg-det"><summary>${pl.length} Orte im Kreis <small>antippen: einzelne abwählen</small></summary><div class="area-chips">${pl.map(p => `<button type="button" data-place="${esc(p.name)}" aria-pressed="${!settings.area || sel.has(p.name) || !settings.region ? 'true' : 'false'}">${esc(p.name)}<small>${p.count} Str.</small></button>`).join('')}</div></details>` : '<small>Keine Orte im Kreis.</small>')
         : '<small>Die Orte in diesem Kreis werden beim Speichern geladen.</small>';
       const ok = OFFLINE_STYLES.includes(mapStyle());
       const plan = tilePlan(c.lat, c.lng, rM);
@@ -1778,34 +1809,42 @@
       persist();
       $('#rg-save').disabled = true; $('#rg-progress').hidden = false;
       const bar = f => { $('#rg-bar').style.width = Math.round(f * 100) + '%'; };
-      $('#rg-status').textContent = 'Straßen und Hausnummern werden geladen … (bis zu 2 Minuten)'; bar(.05);
-      await loadIndex(true);
+      let idxDone = false, tDone = 0, tAll = 0, tFail = 0;
+      const show = () => {
+        bar(Math.max(.05, (idxDone ? .35 : .1) + (tAll ? .65 * tDone / tAll : (idxDone ? .65 : 0))));
+        $('#rg-status').textContent = (tAll && tDone < tAll ? `Karte wird gespeichert … ${tDone} von ${tAll}` : tAll ? 'Karte gespeichert' : '') + (idxDone ? '' : (tAll ? ' · ' : '') + 'Straßen und Hausnummern werden geladen … (bis zu 2 Minuten)');
+      };
+      show();
+      // Karte und Straßenverzeichnis gleichzeitig laden – spart Wartezeit
+      const tilesJob = (async () => {
+        if (!$('#rg-tiles').checked || !OFFLINE_STYLES.includes(mapStyle()) || !window.caches) return;
+        const plan = tilePlan(c.lat, c.lng, rM), st = mapStyle();
+        tAll = plan.list.length;
+        try { await caches.delete('tourplan-offline'); } catch (_) {}
+        const cache = await caches.open('tourplan-offline');
+        let i = 0;
+        const worker = async () => {
+          while (i < plan.list.length) {
+            const url = tileUrl(st, plan.list[i++]);
+            try { const r = await fetch(url, { mode: 'no-cors' }); await cache.put(url, r); } catch (_) { tFail++; }
+            tDone++; show();
+          }
+        };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        if (tFail < tAll / 2) { settings.region.z = plan.maxZ; settings.region.style = st; persist(); }
+      })();
+      await loadIndex(true); idxDone = true; show();
       // Gebiet = gewählte Orte, sonst alle Orte im Kreis
       const inCircle = Geo.placesInCircle(c.lat, c.lng, rM).map(p => p.name);
       settings.area = chosen && chosen.length ? chosen : inCircle; settings.areaAuto = false; settings.areaOk = true;
       applyArea(); renderAreaCard(); renderStops();
-      bar(.4);
-      if ($('#rg-tiles').checked && OFFLINE_STYLES.includes(mapStyle())) {
-        const plan = tilePlan(c.lat, c.lng, rM), st = mapStyle();
-        try { await caches.delete('tourplan-offline'); } catch (_) {}
-        const cache = await caches.open('tourplan-offline');
-        let done = 0, i = 0;
-        const worker = async () => {
-          while (i < plan.list.length) {
-            const url = tileUrl(st, plan.list[i++]);
-            try { const r = await fetch(url, { mode: 'no-cors' }); await cache.put(url, r); } catch (_) {}
-            done++; bar(.4 + .6 * done / plan.list.length);
-            $('#rg-status').textContent = `Karte wird gespeichert … ${done} von ${plan.list.length}`;
-          }
-        };
-        await Promise.all([worker(), worker(), worker()]);
-        settings.region.z = plan.maxZ; settings.region.style = st; persist();
-      }
+      await tilesJob;
+      Map_.setTiles();
       bar(1);
       const a = Geo.addrCount(), sc = Geo.streetCount();
       const failed = indexState === 'error' || indexState === 'addr-error';
-      $('#rg-status').textContent = failed
-        ? `Der Kartendienst für Straßen ist gerade überlastet – bisherige Daten bleiben (${sc ? sc.streets : 0} Straßen). Später in den Einstellungen „Aktualisieren“ tippen.${settings.region.z ? ' Karte ist gespeichert.' : ''}`
+      $('#rg-status').textContent =
+        tFail && tFail >= tAll / 2 ? 'Die Karte konnte nicht gespeichert werden (keine Verbindung zum Kartendienst). Bitte mit WLAN noch einmal versuchen.' : failed ? `Der Kartendienst für Straßen ist gerade überlastet – bisherige Daten bleiben (${sc ? sc.streets : 0} Straßen). Später in den Einstellungen „Aktualisieren“ tippen.${settings.region.z ? ' Karte ist gespeichert.' : ''}`
         : `Fertig: ${sc ? sc.streets : 0} Straßen, ${a ? a.n.toLocaleString('de-DE') : 0} Hausnummern${settings.region.z ? ', Karte bis Zoomstufe ' + settings.region.z : ''} gespeichert.`;
       $('#rg-save').disabled = false;
       toast(failed ? 'Gebiet gespeichert – Straßen später aktualisieren' : 'Gebiet gespeichert');
@@ -1889,6 +1928,7 @@
     $('#s-stopmin').value = settings.stopMin;
     renderNavChoices($('#s-nav'), true);
     renderThemeChoices($('#s-theme'));
+    renderAccentChoices($('#s-accent'));
     renderMapStyleChoices($('#s-mapstyle'));
     $('#s-meicon').innerHTML = Object.entries(ME_ICONS).map(([k, v]) => `<button data-mi="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}">${v.name.replace('Gelber ', '')}</button>`).join('');
     $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
@@ -1985,6 +2025,7 @@
 
   applyTheme();
   if (!settings.onboarded || !settings.depot) startOnboarding(); else startApp();
+  setTimeout(() => { const sp = $('#splash'); if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 450); } }, 700);
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
