@@ -31,11 +31,18 @@
     waze:   { name: 'Waze', color: '#33CCFF', ink: '#0B2C3A', icon: '<svg viewBox="0 0 24 24"><path d="M5 15.5a7.5 7.5 0 1 1 14.6-2.4c0 2.7-1.8 4.6-4.6 5.3"/><circle cx="9.5" cy="10.5" r=".6" fill="currentColor"/><circle cx="14.5" cy="10.5" r=".6" fill="currentColor"/><path d="M9.5 13.5c1.3 1.2 3.7 1.2 5 0"/><circle cx="8" cy="19" r="1.6"/><circle cx="15" cy="19" r="1.6"/></svg>' },
     google: { name: 'Google Maps', color: '#1A73E8', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>' },
     apple:  { name: 'Apple Karten', color: '#34C759', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M4 7l5-2 6 2 5-2v12l-5 2-6-2-5 2z"/><path d="M9 5v12M15 7v12"/></svg>' },
+    mapsme: { name: 'MAPS.ME', color: '#2FB75A', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>' },
   };
   const ll = p => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
   function navUrl(p, app = settings.nav) {
     if (app === 'waze') return `https://waze.com/ul?ll=${ll(p)}&navigate=yes`;
     if (app === 'apple') return `https://maps.apple.com/?daddr=${ll(p)}&dirflg=d`;
+    if (app === 'mapsme') {          // MAPS.ME braucht für eine Route den Startpunkt; ohne Standort zeigt es den Zielpunkt
+      const name = encodeURIComponent((p.label || p.name || 'Ziel').split(',')[0]);
+      let me = null; try { me = Me.pos; } catch (_) {}
+      return me ? `mapsme://route?sll=${me.lat},${me.lon}&saddr=${encodeURIComponent('Mein Standort')}&dll=${ll(p)}&daddr=${name}&type=vehicle`
+        : `mapsme://map?v=1&ll=${ll(p)}&n=${name}`;
+    }
     return `https://www.google.com/maps/dir/?api=1&destination=${ll(p)}&travelmode=driving`;
   }
   function googleMultiUrl(origin, pts, dest) {

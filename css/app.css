@@ -1073,3 +1073,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .pp-adr { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
 .pp-adr b { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .pin-pop button { border: 0; border-radius: 12px; padding: 9px 12px; background: var(--accent-soft); color: var(--accent); font: 700 14px var(--sans); }
+/* Vier Navi-Apps: zwei pro Reihe */
+.choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.choice { min-width: 0; overflow-wrap: anywhere; }
