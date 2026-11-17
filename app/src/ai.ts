@@ -1,3 +1,4 @@
+import { timeout } from './geo';
 // KI-Texterkennung mit Groq und/oder Google Gemini. Fällt bei Fehlern automatisch auf den anderen Dienst zurück.
 export type Provider = 'groq' | 'gemini';
 export type Keys = { groq?: string; gemini?: string; prefer?: Provider };
@@ -19,7 +20,7 @@ async function fail(r: Response) {
 }
 
 async function call(p: Provider, key: string, model: string, system: string, user: string): Promise<string> {
-  const signal = AbortSignal.timeout(15000);
+  const signal = timeout(15000);
   if (p === 'groq') {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST', signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },

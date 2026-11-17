@@ -3,12 +3,14 @@ export type Pt = { lat: number; lon: number };
 export type Place = Pt & { label: string; city: string; approx?: boolean };
 
 const UA = { 'User-Agent': 'Tourplan-App/1.0' };
+/** Abbruch nach ms (AbortSignal.timeout gibt es nicht überall in React Native). */
+export function timeout(ms: number) { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; }
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 const norm = (s: string) => s.toLowerCase().replace(/ß/g, 'ss').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u')
   .replace(/str\.?\b/g, 'strasse').replace(/[^a-z0-9]/g, '');
 
 async function getJson(url: string, ms = 8000) {
-  const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(ms) });
+  const r = await fetch(url, { headers: UA, signal: timeout(ms) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
@@ -78,16 +80,17 @@ export async function matrix(pts: Pt[]): Promise<{ dur: number[][]; source: stri
   return { dur: pts.map(a => pts.map(b => crow(a, b).dur)), source: 'luftlinie' };
 }
 
-/** Fahrzeit und Strecke je Abschnitt in Reihenfolge. */
-export async function legs(pts: Pt[]): Promise<{ dur: number; dist: number }[]> {
-  if (pts.length < 2) return [];
+/** Fahrzeit und Strecke je Abschnitt in Reihenfolge, dazu die Linie für die Karte ([lon, lat]). */
+export async function legs(pts: Pt[]): Promise<{ legs: { dur: number; dist: number }[]; line: [number, number][] }> {
+  if (pts.length < 2) return { legs: [], line: [] };
   try {
-    const out: { dur: number; dist: number }[] = [];
+    const out: { dur: number; dist: number }[] = [], line: [number, number][] = [];
     for (let s = 0; s < pts.length - 1; s += 79) {
-      const j = await getJson(`${OSRM}/route/v1/driving/${coords(pts.slice(s, s + 80))}?overview=false`, 20000);
+      const j = await getJson(`${OSRM}/route/v1/driving/${coords(pts.slice(s, s + 80))}?overview=full&geometries=geojson`, 20000);
       if (j.code !== 'Ok') throw 0;
       j.routes[0].legs.forEach((l: any) => out.push({ dur: l.duration, dist: l.distance }));
+      line.push(...j.routes[0].geometry.coordinates);
     }
-    return out;
-  } catch { return pts.slice(1).map((p, i) => crow(pts[i], p)); }
+    return { legs: out, line };
+  } catch { return { legs: pts.slice(1).map((p, i) => crow(pts[i], p)), line: pts.map(p => [p.lon, p.lat]) }; }
 }

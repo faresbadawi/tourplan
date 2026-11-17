@@ -91,3 +91,18 @@ Entwicklungsumgebung auf dem Laptop des Nutzers: JDK 17 unter `~/jdk`, Android-S
 - Die Dienste Photon und Overpass sperren bei vielen Anfragen die IP – beim Testen keine Schübe schicken.
 - Zum Testen der Karte gibt es keine Schlüssel. Die Vektorkarte lädt im nachgestellten Handy-Bildschirm teils erst nach 10–15 Sekunden.
 - Service Worker ist nur auf `https:` und `localhost` aktiv; bei Änderungen die Cache-Version in `sw.js` erhöhen.
+
+## 10. Stand native App (`app/`, 17.11.2026)
+
+Expo SDK 58 / React Native 0.88, MapLibre React Native 11. Einstieg `app/App.tsx`, Logik in `app/src/`:
+`parse.js`/`optimize.js` (aus der Web-App übernommen), `geo.ts` (Photon/Nominatim, OSRM), `ai.ts` (Groq **und** Gemini, automatischer Wechsel bei Fehlern), `store.ts` (AsyncStorage `tp.v1`), `MapScreen.tsx`, `LoadScreen.tsx`, `HistoryScreen.tsx`, `ui.tsx`.
+
+Tabs: Tour (Eingabe, KI, Optimieren, Fahren mit Zugestellt/Überspringen), Karte (OpenFreeMap hell/dunkel, Route, Pins antippbar), Laderaum (Fahrzeug, Zugang, 2–4 Bereiche), Verlauf (Tempo je Stopp, Pakete/Stunde), Optionen.
+
+APK bauen (ohne Expo-Konto):
+```
+cd app && npx expo prebuild --platform android
+cd android && JAVA_HOME=~/jdk ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+# → android/app/build/outputs/apk/release/app-release.apk (mit Debug-Schlüssel signiert)
+```
+Noch offen gegenüber der Web-App: Offline-Karten, Straßenverzeichnis/Korrekturvorschläge, Hintergrund-Standort, eigener Release-Schlüssel für den Play Store.

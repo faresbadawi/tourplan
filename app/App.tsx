@@ -8,34 +8,43 @@ import { geocode, legs, matrix, Place, reverse } from './src/geo';
 import { solve } from './src/optimize';
 import { parseLine, smartParse } from './src/parse';
 import { Route, Settings, State, Stop, usePersisted } from './src/store';
+import { ACCENTS, Btn, C, min, st } from './src/ui';
+import { MapScreen } from './src/MapScreen';
+import { LoadScreen } from './src/LoadScreen';
+import { HistoryScreen } from './src/HistoryScreen';
 
-const C = { bg: '#0E1116', card: '#181C24', line: '#272D38', text: '#F2F4F8', dim: '#9AA3B2', ok: '#3DD68C', err: '#FF6B6B', skip: '#F5A524' };
-const ACCENTS = ['#FFC21A', '#4C9BFF', '#FF5A5F', '#3DD68C'];
 const uid = () => Math.random().toString(36).slice(2, 10);
-const min = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
+
+type Tab = 'tour' | 'map' | 'load' | 'hist' | 'set';
+const TABS: [Tab, string, string][] = [['tour', '📋', 'Tour'], ['map', '🗺️', 'Karte'], ['load', '🚚', 'Laderaum'], ['hist', '📈', 'Verlauf'], ['set', '⚙️', 'Optionen']];
 
 export default function App() {
   const [state, setState, ready] = usePersisted();
-  const [tab, setTab] = useState<'tour' | 'set'>('tour');
+  const [tab, setTab] = useState<Tab>('tour');
   const A = state.settings.accent;
   const set = (p: Partial<State>) => setState(s => ({ ...s, ...p }));
+  const setS = (p: Partial<Settings>) => setState(s => ({ ...s, settings: { ...s.settings, ...p } }));
   return (
     <SafeAreaProvider>
       <SafeAreaView style={st.root} edges={['top', 'bottom']}>
         <StatusBar style="light" />
         <View style={st.head}>
           <Text style={st.title}>Tour<Text style={{ color: A }}>plan</Text></Text>
-          {state.route && tab === 'tour' && <Progress route={state.route} stops={state.stops} accent={A} />}
+          {state.route && (tab === 'tour' || tab === 'map') && <Progress route={state.route} pace={state.settings.pace.sec} accent={A} />}
         </View>
         <View style={{ flex: 1 }}>
           {!ready ? <ActivityIndicator color={A} style={{ marginTop: 40 }} />
-            : tab === 'set' ? <SettingsView s={state.settings} onChange={x => set({ settings: { ...state.settings, ...x } })} />
-            : state.route ? <Drive state={state} set={set} />
+            : tab === 'set' ? <SettingsView s={state.settings} onChange={setS} />
+            : tab === 'map' ? <MapScreen state={state} onNav={p => navigate(p, state.settings.nav)} onDone={id => setState(s => markDone(s, id, true))} />
+            : tab === 'load' ? <LoadScreen state={state} onChange={setS} />
+            : tab === 'hist' ? <HistoryScreen state={state} onClear={() => set({ history: [] })} />
+            : state.route ? <Drive state={state} set={set} setState={setState} />
             : <Plan state={state} setState={setState} onNeedDepot={() => setTab('set')} />}
         </View>
         <View style={st.tabs}>
-          {([['tour', 'Tour'], ['set', 'Einstellungen']] as const).map(([k, l]) => (
+          {TABS.map(([k, ic, l]) => (
             <Pressable key={k} onPress={() => setTab(k)} style={st.tab}>
+              <Text style={{ fontSize: 18, opacity: tab === k ? 1 : 0.55 }}>{ic}</Text>
               <Text style={[st.tabT, tab === k && { color: A }]}>{l}</Text>
               <View style={[st.tabBar, tab === k && { backgroundColor: A }]} />
             </Pressable>
@@ -46,13 +55,6 @@ export default function App() {
   );
 }
 
-function Btn({ label, onPress, color, ghost, busy, small }: { label: string; onPress: () => void; color: string; ghost?: boolean; busy?: boolean; small?: boolean }) {
-  return (
-    <Pressable onPress={onPress} disabled={busy} style={({ pressed }) => [st.btn, small && st.btnS, ghost ? { borderColor: color, borderWidth: 1.5 } : { backgroundColor: color }, pressed && { opacity: 0.7 }]}>
-      {busy ? <ActivityIndicator color={ghost ? color : '#111'} /> : <Text style={[st.btnT, small && { fontSize: 14 }, { color: ghost ? color : '#111' }]}>{label}</Text>}
-    </Pressable>
-  );
-}
 
 /* ---------- Planen: Adressen eingeben, prüfen, optimieren ---------- */
 function Plan({ state, setState, onNeedDepot }: { state: State; setState: React.Dispatch<React.SetStateAction<State>>; onNeedDepot: () => void }) {
@@ -96,7 +98,8 @@ function Plan({ state, setState, onNeedDepot }: { state: State; setState: React.
       const { order } = solve(dur, S.roundtrip, 1500);
       const ids = (order as number[]).map(i => ok[i - 1].id);
       const seq = [start, ...ids.map(id => ok.find(s => s.id === id)!.place!), ...(S.roundtrip && S.depot ? [S.depot] : [])];
-      const route: Route = { order: ids, legs: await legs(seq), done: {}, source, start, created: Date.now() };
+      const r = await legs(seq);
+      const route: Route = { order: ids, legs: r.legs, line: r.line, done: {}, doneAt: {}, source, start, created: Date.now() };
       setState(s => ({ ...s, route }));
     } finally { setBusy(''); }
   }
@@ -119,19 +122,23 @@ function Plan({ state, setState, onNeedDepot }: { state: State; setState: React.
         </View>}
       </View>}
       renderItem={({ item: s, index }) => (
-        <View style={st.card}>
+        <Pressable style={st.card} disabled={s.status !== 'err'} onPress={async () => {
+          patch(s.id, { status: 'pending' });
+          const p = await geocode(s.query, S.depot);
+          patch(s.id, p ? { status: 'ok', place: p } : { status: 'err' });
+        }}>
           <Text style={[st.num, { color: A }]}>{index + 1}</Text>
           <View style={{ flex: 1 }}>
             <Text style={st.item}>{s.place?.label || s.query}</Text>
             <Text style={[st.dim, s.status === 'err' && { color: C.err }]}>
-              {s.status === 'pending' ? 'Suche …' : s.status === 'err' ? 'Nicht gefunden – bitte anders schreiben' : s.place?.approx ? 'Hausnummer ungefähr' : 'Gefunden'}
+              {s.status === 'pending' ? 'Suche …' : s.status === 'err' ? 'Nicht gefunden – antippen für neuen Versuch' : s.place?.approx ? 'Hausnummer ungefähr' : 'Gefunden'}
             </Text>
           </View>
           <Pressable onPress={() => setState(st2 => ({ ...st2, stops: st2.stops.map(x => (x.id === s.id ? { ...x, pk: ((x.pk || 1) % 9) + 1 } : x)) }))} style={st.pk}>
             <Text style={st.pkT}>{s.pk || 1}📦</Text>
           </Pressable>
           <Pressable hitSlop={10} onPress={() => setState(st2 => ({ ...st2, stops: st2.stops.filter(x => x.id !== s.id) }))}><Text style={st.x}>✕</Text></Pressable>
-        </View>
+        </Pressable>
       )}
       ListFooterComponent={nOk ? <View style={{ marginTop: 10 }}><Btn label={`Route optimieren (${nOk})`} color={A} busy={busy === 'opt'} onPress={optimize} /></View> : undefined}
     />
@@ -147,30 +154,47 @@ function navigate(p: Place, nav: Settings['nav']) {
   Linking.openURL(url).catch(() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${ll}`));
 }
 
-function Progress({ route, stops, accent }: { route: Route; stops: Stop[]; accent: string }) {
+function Progress({ route, pace, accent }: { route: Route; pace: number; accent: string }) {
   const n = route.order.length, d = Object.keys(route.done).length;
-  const left = route.legs.slice(d).reduce((a, l) => a + l.dur, 0);
+  const left = route.legs.slice(d).reduce((a, l) => a + l.dur, 0) + (n - d) * pace;
+  const eta = new Date(Date.now() + left * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   return (
     <View style={{ marginTop: 8 }}>
-      <Text style={st.dim}>{d} / {n} erledigt · noch ca. {min(left)} Fahrt</Text>
+      <Text style={st.dim}>{d} / {n} erledigt · noch ca. {min(left)} · fertig ≈ {eta}</Text>
       <View style={st.bar}><View style={{ width: `${(d / n) * 100}%`, height: '100%', backgroundColor: accent, borderRadius: 3 }} /></View>
     </View>
   );
 }
 
-function Drive({ state, set }: { state: State; set: (p: Partial<State>) => void }) {
+/** Stopp abhaken/überspringen/zurücksetzen. Beim Zustellen wird das Tempo (Zeit je Stopp ohne Fahrt) gelernt. */
+function markDone(s: State, id: string, v: true | 'skip' | null): State {
+  const r = s.route; if (!r) return s;
+  const done = { ...r.done }, doneAt = { ...(r.doneAt || {}) }, now = Date.now();
+  let pace = s.settings.pace;
+  if (v) {
+    const i = r.order.indexOf(id), prev = Math.max(r.created, ...Object.values(doneAt));
+    const sec = (now - prev) / 1000 - (r.legs[i]?.dur || 0);
+    if (v === true && Object.keys(done).length && sec > 10 && sec < 900) { const n = Math.min(pace.n + 1, 50); pace = { n, sec: (pace.sec * (n - 1) + sec) / n }; }
+    done[id] = v; doneAt[id] = now;
+  } else { delete done[id]; delete doneAt[id]; }
+  return { ...s, route: { ...r, done, doneAt }, settings: { ...s.settings, pace } };
+}
+
+function Drive({ state, set, setState }: { state: State; set: (p: Partial<State>) => void; setState: React.Dispatch<React.SetStateAction<State>> }) {
   const { route, stops, settings: S } = state as State & { route: Route };
   const A = S.accent;
   const byId = useMemo(() => Object.fromEntries(stops.map(s => [s.id, s])), [stops]);
   const nextIdx = route.order.findIndex(id => !route.done[id]);
   const cur = nextIdx >= 0 ? byId[route.order[nextIdx]] : null;
-  const mark = (id: string, v: true | 'skip' | null) => {
-    const done = { ...route.done }; if (v) done[id] = v; else delete done[id];
-    set({ route: { ...route, done } });
-  };
-  const finish = () => Alert.alert('Tour beenden?', 'Die Stopp-Liste wird geleert.', [{ text: 'Abbrechen' }, { text: 'Beenden', style: 'destructive', onPress: () => set({ route: null, stops: [] }) }]);
+  const mark = (id: string, v: true | 'skip' | null) => setState(s => markDone(s, id, v));
   const total = route.legs.reduce((a, l) => a + l.dist, 0) / 1000;
   const skipped = Object.values(route.done).filter(v => v === 'skip').length;
+  const finish = () => Alert.alert('Tour beenden?', 'Die Tour kommt in den Verlauf, die Stopp-Liste wird geleert.', [{ text: 'Abbrechen' }, { text: 'Beenden', style: 'destructive', onPress: () => {
+    const ids = Object.keys(route.done), pk = ids.filter(id => route.done[id] === true).reduce((a, id) => a + (byId[id]?.pk || 1), 0);
+    const end = Math.max(route.created, ...Object.values(route.doneAt || {}));
+    const h = { at: route.created, stops: ids.length - skipped, skipped, pk, km: total, min: (end - route.created) / 60000 };
+    set({ route: null, stops: [], history: ids.length ? [h, ...state.history].slice(0, 200) : state.history });
+  } }]);
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -273,6 +297,7 @@ function SettingsView({ s, onChange }: { s: Settings; onChange: (p: Partial<Sett
       <View style={st.box}>
         <Text style={st.h2}>Navigation</Text>
         <Choice value={s.nav} onPick={nav => onChange({ nav })} options={[['google', 'Google Maps'], ['waze', 'Waze'], ['geo', 'Andere']]} />
+        <View style={st.sw}><Text style={st.item}>Dunkle Karte</Text><Switch value={s.mapDark} onValueChange={v => onChange({ mapDark: v })} trackColor={{ true: A }} /></View>
       </View>
       <View style={st.box}>
         <Text style={st.h2}>KI-Texterkennung</Text>
@@ -290,36 +315,3 @@ function SettingsView({ s, onChange }: { s: Settings; onChange: (p: Partial<Sett
   );
 }
 
-const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  head: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, borderBottomWidth: 1, borderColor: C.line },
-  title: { color: C.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
-  tabs: { flexDirection: 'row', borderTopWidth: 1, borderColor: C.line, backgroundColor: C.card },
-  tab: { flex: 1, alignItems: 'center', paddingTop: 12 },
-  tabT: { color: C.dim, fontSize: 15, fontWeight: '700', paddingBottom: 10 },
-  tabBar: { height: 3, width: 40, borderRadius: 2 },
-  row: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  input: { minHeight: 110, backgroundColor: C.card, color: C.text, borderRadius: 14, padding: 14, fontSize: 17, textAlignVertical: 'top', borderWidth: 1, borderColor: C.line },
-  field: { backgroundColor: C.bg, color: C.text, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, borderWidth: 1, borderColor: C.line },
-  btn: { borderRadius: 12, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
-  btnS: { paddingVertical: 10, paddingHorizontal: 14, minHeight: 42 },
-  btnT: { fontSize: 16, fontWeight: '800' },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: C.line },
-  num: { width: 28, fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  item: { color: C.text, fontSize: 16, fontWeight: '600' },
-  dim: { color: C.dim, fontSize: 14 },
-  h2: { color: C.text, fontSize: 18, fontWeight: '800' },
-  label: { color: C.text, fontSize: 14, fontWeight: '700' },
-  pk: { backgroundColor: C.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
-  pkT: { color: C.text, fontWeight: '700' },
-  x: { color: C.dim, fontSize: 18, paddingHorizontal: 4 },
-  hero: { backgroundColor: C.card, borderRadius: 18, padding: 18, gap: 10, borderWidth: 2 },
-  heroT: { color: C.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
-  bar: { height: 6, backgroundColor: C.line, borderRadius: 3, marginTop: 6, overflow: 'hidden' },
-  box: { backgroundColor: C.card, borderRadius: 16, padding: 16, gap: 12, borderWidth: 1, borderColor: C.line },
-  sw: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  seg: { flexDirection: 'row', backgroundColor: C.bg, borderRadius: 10, padding: 3 },
-  segI: { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center' },
-  segT: { color: C.text, fontWeight: '700' },
-  dot: { width: 40, height: 40, borderRadius: 20, borderWidth: 3, borderColor: 'transparent' },
-});

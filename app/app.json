@@ -32,7 +32,8 @@
         {
           "locationWhenInUsePermission": "Tourplan nutzt den Standort als Startpunkt der Tour."
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ]
   }
 }
