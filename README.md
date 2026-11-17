@@ -117,3 +117,9 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Neue Standardkarte „Straßen & Hausnummern“: Vektorkarte von OpenFreeMap (frei, ohne Schlüssel) mit Straßennamen, Hausnummern ab Zoomstufe 16 und Gebäuden, hell und dunkel
 - Offline-Speichern jetzt mit dieser Vektorkarte statt mit Rasterkacheln (deren Server verbieten das Vorab-Laden); Zoom 0–14 im gewählten Kreis, höhere Stufen werden daraus gezoomt – typisch 10–25 MB statt hunderter Kacheln; Fehler werden gezählt statt Fehlerseiten zu speichern
 - Navi-App „Andere Karten-App“ (Android): öffnet über einen geo:-Link die Auswahl der installierten Karten-Apps (MAPS.ME, Organic Maps, CoMaps …)
+
+## Version 15
+
+- Straßennamen früher (ab Zoomstufe 13,5), größer und fett, dunkel auf hell; Hausnummern größer
+- Eigener Dunkelmodus der Karte aus dem hellen Stil abgeleitet: helle Straßen, hellgraue Gebäude, weiße Schrift und Hausnummern, kräftigere Gewässer und Grünflächen
+- Auf den Stopp zoomen ist jetzt näher (Stufe 17): „Stopp“-Knopf, nächster Stopp, Standort folgen

@@ -325,16 +325,71 @@
   const mapDark = () => settings.mapMode === 'dark' ? true : settings.mapMode === 'light' ? false : isDark();
   /* ---------- Vektorkarte von OpenFreeMap: Straßennamen, Hausnummern, Gebäude; Offline-Speichern ist dort ausdrücklich erlaubt ---------- */
   const OFM = 'https://tiles.openfreemap.org';
+  /* Farben für den Dunkelmodus (selbst gebaut, aus dem hellen Stil abgeleitet: helle Straßen, hellgraue Gebäude, weiße Schrift) */
+  const DK = {
+    bg: '#161E2D', park: '#1F3B2E', wood: '#1C3527', grass: '#203D2D', resid: '#1B2536', water: '#1F4670', waterway: '#2F6AA3',
+    pitch: '#27442F', cemetery: '#243A2D', hospital: '#3B2A3A', school: '#2B3446', sand: '#3B3828', aero: '#26324A',
+    bldg: '#6A778C', bldgLine: '#A3B0C6', casing: '#0C121D', minor: '#9AA8C6', service: '#7C8AA8', path: '#7A87A3',
+    sec: '#E2C467', primary: '#F0A85A', motorway: '#F08A4A', rail: '#6F7A92', boundary: '#7480A0',
+    text: '#F4F7FF', halo: '#0B1220', water_t: '#8DB7F0', poi: '#C9D3E8', path_t: '#C8B994'
+  };
+  function darkenStyle(style) {
+    const L = style.layers;
+    for (const l of L) {
+      const id = l.id, t = l.type, p = l.paint = l.paint || {}, ly = l.layout = l.layout || {};
+      if (t === 'background') p['background-color'] = DK.bg;
+      else if (t === 'raster') ly.visibility = 'none';
+      else if (t === 'fill') {
+        const c = id.startsWith('park') ? DK.park : id === 'landcover_wood' ? DK.wood : id === 'landcover_grass' ? DK.grass : id === 'landuse_residential' ? DK.resid
+          : id === 'water' ? DK.water : id === 'landuse_pitch' || id === 'landuse_track' ? DK.pitch : id === 'landuse_cemetery' ? DK.cemetery : id === 'landuse_hospital' ? DK.hospital
+          : id === 'landuse_school' ? DK.school : id === 'landcover_sand' ? DK.sand : id === 'landcover_ice' ? DK.resid : id === 'aeroway_fill' ? DK.aero : id === 'building' ? DK.bldg : null;
+        if (c) { p['fill-color'] = c; if (id === 'building') { p['fill-outline-color'] = DK.bldgLine; p['fill-opacity'] = 1; } }
+      } else if (t === 'line') {
+        let c = null;
+        if (id.startsWith('park_outline')) c = DK.park;
+        else if (id.startsWith('waterway')) c = DK.waterway;
+        else if (id.startsWith('aeroway')) c = DK.aero;
+        else if (id.startsWith('boundary')) c = DK.boundary;
+        else if (/rail|transit/.test(id)) c = DK.rail;
+        else if (/casing/.test(id)) c = DK.casing;
+        else if (/motorway/.test(id)) c = DK.motorway;
+        else if (/trunk_primary|_link/.test(id)) c = DK.primary;
+        else if (/secondary_tertiary/.test(id)) c = DK.sec;
+        else if (/path_pedestrian/.test(id)) c = DK.path;
+        else if (/service_track/.test(id)) c = DK.service;
+        else if (/_minor|_street/.test(id)) c = DK.minor;
+        if (c) p['line-color'] = c;
+      } else if (t === 'symbol' && ly['text-field']) {
+        p['text-color'] = /water|waterway/.test(id) ? DK.water_t : /poi/.test(id) ? DK.poi : id === 'highway-name-path' ? DK.path_t : DK.text;
+        p['text-halo-color'] = DK.halo; p['text-halo-width'] = 1.8;
+      }
+    }
+    return style;
+  }
+  /** Straßennamen früher, größer und kräftiger – sonst sieht man sie auf dem Handy kaum */
+  function boldNames(style, dark) {
+    for (const l of style.layers) {
+      if (!/^highway-name-(minor|major|path)$/.test(l.id)) continue;
+      l.minzoom = l.id === 'highway-name-major' ? 12 : 13.5;
+      l.layout = Object.assign({}, l.layout, { 'text-font': ['Noto Sans Bold'], 'symbol-spacing': 200, 'text-padding': 2,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 15, 13, 17, 16, 19, 19] });
+      l.paint = Object.assign({}, l.paint, { 'text-halo-width': 2.2 });
+      if (!dark) { l.paint['text-color'] = '#1F2937'; l.paint['text-halo-color'] = '#FFFFFF'; }
+    }
+    return style;
+  }
   async function vecStyle(dark) {
-    const key = 'tp.vstyle.' + (dark ? 'd' : 'l');
+    const key = 'tp.vstyle.l';
     let style = null;
-    try { const r = await fetch(`${OFM}/styles/${dark ? 'dark' : 'liberty'}`); if (r.ok) { style = await r.json(); try { localStorage.setItem(key, JSON.stringify(style)); } catch (_) {} } } catch (_) {}
+    try { const r = await fetch(`${OFM}/styles/liberty`); if (r.ok) { style = await r.json(); try { localStorage.setItem(key, JSON.stringify(style)); } catch (_) {} } } catch (_) {}
     if (!style) { try { style = JSON.parse(localStorage.getItem(key)); } catch (_) {} }
     if (!style) return null;
     style.layers = style.layers.filter(l => l.id !== 'building-3d').map(l => { if (l.id !== 'building') return l; const n = Object.assign({}, l, { minzoom: 12 }); delete n.maxzoom; return n; });
+    if (dark) darkenStyle(style);
+    boldNames(style, dark);
     style.layers.push({ id: 'tp-housenumber', type: 'symbol', source: 'openmaptiles', 'source-layer': 'housenumber', minzoom: 16,
-      layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 11, 19, 16], 'text-padding': 1 },
-      paint: { 'text-color': dark ? '#F2F6FF' : '#2D3B52', 'text-halo-color': dark ? '#0B1220' : '#FFFFFF', 'text-halo-width': 1.8 } });
+      layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 12, 19, 17], 'text-padding': 1 },
+      paint: { 'text-color': dark ? '#FFFFFF' : '#1F2937', 'text-halo-color': dark ? '#0B1220' : '#FFFFFF', 'text-halo-width': 2 } });
     return style;
   }
   /** Grundkarte an eine Leaflet-Karte hängen (Rasterkacheln oder Vektorkarte) */
@@ -448,7 +503,7 @@
       setTimeout(() => {
         m.invalidateSize();
         const nx = this.nextStop();
-        if (nx) m.setView([nx.lat, nx.lon], 16);
+        if (nx) m.setView([nx.lat, nx.lon], 17);
         else if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
       }, 50);
     },
@@ -476,7 +531,7 @@
       toast(this.zoomOn() ? 'Karte folgt dem nächsten Stopp' : 'Karte zeigt die ganze Tour');
       this.lastFit = ''; this.render(true);
     },
-    flyTo(p, zoom = 16, duration = .6) { if (this.map) this.map.flyTo([p.lat, p.lon], zoom, { duration }); },
+    flyTo(p, zoom = 17, duration = .6) { if (this.map) this.map.flyTo([p.lat, p.lon], zoom, { duration }); },
     visible() { return this.map && (this.full || wide() || (!$('#result').hidden && $('#map-wrap').getBoundingClientRect().bottom > 0)); },
     /* Route abspielen: Stopp für Stopp hinfliegen, dann wieder alles zeigen */
     playing: 0,
@@ -490,7 +545,7 @@
       for (const id of ids) {
         if (this.playing !== run) return;
         const s = stopById(id); if (!s) continue;
-        this.map.flyTo([s.lat, s.lon], 16, { duration: 1.1 });
+        this.map.flyTo([s.lat, s.lon], 17, { duration: 1.1 });
         await wait(1150);
         const pin = this.pinEls[id]; if (pin) { pin.classList.remove('flash'); void pin.offsetWidth; pin.classList.add('flash'); }
         await wait(650);
@@ -578,7 +633,7 @@
     },
     start(fromClick) {
       const m = Map_.ensure(); if (!m) return;
-      if (fromClick) { this.compass(true); this.follow = true; if (this.pos) m.flyTo([this.pos.lat, this.pos.lon], Math.max(m.getZoom(), 16), { duration: .6 }); }
+      if (fromClick) { this.compass(true); this.follow = true; if (this.pos) m.flyTo([this.pos.lat, this.pos.lon], Math.max(m.getZoom(), 17), { duration: .6 }); }
       $('#map-locate').classList.toggle('on', this.follow);
       if (!this.dragWired) { this.dragWired = true; m.on('dragstart', () => { this.follow = false; $('#map-locate').classList.remove('on'); }); }
       if (this.watchId != null) return;
@@ -593,7 +648,7 @@
         } else { this.marker.setLatLng([c.latitude, c.longitude]); this.acc.setLatLng([c.latitude, c.longitude]).setRadius(c.accuracy); }
         this.rotate();
         if (this.follow) {
-          if (this.first) { m.setView([c.latitude, c.longitude], Math.max(m.getZoom(), 16)); this.first = false; }
+          if (this.first) { m.setView([c.latitude, c.longitude], Math.max(m.getZoom(), 17)); this.first = false; }
           else m.panTo([c.latitude, c.longitude], { animate: true, duration: .5 });
         }
       }, err => {
@@ -1374,7 +1429,7 @@
     if (openId === id) openId = null;
     persist(); renderResult(); justDone = null;
     const cur = currentIndex();
-    if (route.done[id] && cur !== -1 && Map_.visible() && Map_.zoomOn()) setTimeout(() => Map_.flyTo(stopById(route.order[cur]), 16, 1.2), 350);
+    if (route.done[id] && cur !== -1 && Map_.visible() && Map_.zoomOn()) setTimeout(() => Map_.flyTo(stopById(route.order[cur]), 17, 1.2), 350);
     if (route.done[id] && cur === -1) setTimeout(showDone, 500);
   }
 
@@ -1753,7 +1808,7 @@
       ${cur !== -1 ? `<button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}</button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}</button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}`;
     bar.hidden = false;
-    $('#mb-info').onclick = () => Map_.flyTo(s, 16, .8);
+    $('#mb-info').onclick = () => Map_.flyTo(s, 17, .8);
   }
 
   function renderDock() {
@@ -1862,7 +1917,7 @@
     const put = async url => { const r = await fetch(url); if (r.ok) { await cache.put(url, r.clone()); return r; } if (r.status === 404 || r.status === 204) return null; throw new Error(String(r.status)); };
     const tj = await (await put(`${OFM}/planet`)).json();
     const fonts = new Set(), sprites = new Set();
-    for (const st of ['liberty', 'dark']) {
+    for (const st of ['liberty']) {
       const r = await put(`${OFM}/styles/${st}`); const d = await r.json();
       d.layers.forEach(l => { const f = (l.layout || {})['text-font']; if (Array.isArray(f)) fonts.add(f.filter(x => typeof x === 'string').join(',')); });
       if (d.sprite) sprites.add(d.sprite);
