@@ -107,3 +107,7 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 
 - Apple Karten wird nur auf iPhone/iPad angeboten (auf Android öffnet der Link nur eine Webseite ohne Navigation); wer es auf Android gewählt hatte, bekommt automatisch Google Maps
 - MAPS.ME: Route ab deinem Standort, auf Android per Intent-Link direkt in die App (kein leerer Browser-Tab), mit Weiterleitung zum Play Store, falls die App fehlt; auf iPhone/iPad per `mapsme://`
+
+## Version 13
+
+- Depot-Knopf oben fragt erst nach („Zum Depot fahren?“ mit Depot-Name, Hinweis auf noch offene Stopps und der gewählten Navi-App); die Navigation startet erst nach „Ja, zum Depot“

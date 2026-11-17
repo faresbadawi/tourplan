@@ -1307,12 +1307,25 @@
     const me = await whereAmI(3500);
     location.href = mapsmeUrl(dll, decodeURIComponent(name), me);
   });
-  $('#top-depot').onclick = () => {                       // Direkt zum Depot navigieren
+  function goDepot() {                                     // Navigation zum Depot starten
     const d = settings.depot; if (!d) return;
+    closeSheet();
     toast(`Navigation zum Depot (${NAV[navKey()].name})`, 1800);
     const u = navUrl(d);
     if (u.startsWith('#nav-mapsme:')) { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); }
     else window.open(u, '_blank', 'noopener');
+  }
+  $('#top-depot').onclick = () => {                        // erst nachfragen, damit es nicht aus Versehen passiert
+    const d = settings.depot; if (!d) return;
+    const open = route ? route.order.filter(id => !route.done[id]).length : 0;
+    openSheet('Zum Depot fahren?', `<div class="dlg">
+      <div class="dlg-ico">${ICON.home}</div>
+      <p class="dlg-name">${esc(d.name || 'Depot')}</p>
+      <p class="dlg-sub">${esc((d.label || '').split(',').slice(0, 2).join(','))}</p>
+      ${open ? `<p class="dlg-warn">Es sind noch <b>${open} Stopp${open === 1 ? '' : 's'}</b> offen.</p>` : ''}
+      <p class="dlg-sub">Die Navigation startet mit ${esc(NAV[navKey()].name)}.</p>
+      <div class="dlg-act"><button type="button" class="btn ghost" id="dep-no">Abbrechen</button><button type="button" class="btn primary" id="dep-yes">${ICON.nav} Ja, zum Depot</button></div></div>`);
+    $('#dep-no').onclick = closeSheet; $('#dep-yes').onclick = goDepot;
   };
 
   /* ---------- Ergebnis ---------- */

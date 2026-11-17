@@ -1099,3 +1099,13 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .pp-act { display: flex; gap: 8px; }
 .pp-act button { flex: 1; min-width: 0; border: 0; border-radius: 12px; padding: 10px 8px; font: 700 14px var(--sans); background: var(--surface-2); color: var(--text); }
 .pp-act button.ok { background: var(--accent); color: var(--accent-ink); }
+
+/* Nachfrage-Fenster (z. B. Zum Depot fahren) */
+.dlg { display: grid; justify-items: center; text-align: center; gap: 6px; padding: 6px 4px 4px; }
+.dlg-ico { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 4px; }
+.dlg-ico svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.dlg-name { margin: 0; font-size: 20px; font-weight: 800; overflow-wrap: anywhere; }
+.dlg-sub { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.dlg-warn { margin: 6px 0 0; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--warn) 22%, var(--surface)); font-size: 14px; }
+.dlg-act { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; width: 100%; margin-top: 14px; }
+.dlg-act .btn { width: 100%; }
