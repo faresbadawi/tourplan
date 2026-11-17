@@ -140,3 +140,21 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Laderaum: Zugang „Von hinten“ (Standard) oder „Seitentür“ – bei Zugang von hinten liegt Bereich A (erste Stopps) direkt an den Hecktüren, bei Seitentür vorne an der Schiebetür; Ladehinweis passt sich an
 - Bereichsgrenzen selbst verschieben (±1 Stopp je Grenze), „Automatisch“ stellt die Aufteilung nach Paketzahl wieder her
 - Fahrzeuge als Karten zum Auswählen; zu jedem Fahrzeug lässt sich ein eigenes Foto hinzufügen (nur auf dem Gerät gespeichert, auf ca. 480 px verkleinert)
+
+## Version 19
+
+- Laderaum: Grundriss wieder einfach (A, B, C, D mit Paketzahl und Zugang); Antippen eines Bereichs öffnet ein Fenster mit allen Stopps und Straßen von hinten nach vorn
+- Zugang „Beides“ (Standard): erste Bereiche hinten (Hecktür), spätere vorne (Seitentür); pro Bereich im Fenster umschaltbar. „Von hinten“ und „Seitentür“ gibt es weiterhin
+- Beispielfotos der Fahrzeuge von Wikimedia Commons (freie Lizenzen), eigene Fotos haben Vorrang
+
+### Bildnachweise (Fahrzeugfotos in `img/vehicles/`, auf 420 px verkleinert)
+
+| Fahrzeug | Urheber | Lizenz | Quelle |
+|---|---|---|---|
+| StreetScooter Work XL | Geoprofi Lars | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:DHL_Roelckestra%C3%9Fe_Berlin.jpg) |
+| Ford E-Transit | JustAnotherCarDesigner | CC0 | [Commons](https://commons.wikimedia.org/wiki/File:Ford_E-Transit_003.jpg) |
+| Ford E-Transit Custom | Alexander Migl | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Ford_E-Transit_Custom_MS-RT_IMG_5323.jpg) |
+| StreetScooter Work | ManuelB701 | CC0 | [Commons](https://commons.wikimedia.org/wiki/File:Nieder-Olm_-_Pariser_Stra%C3%9Fe,_DHL-Streetscooter.jpg) |
+| StreetScooter Work L | Superbass | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:2016-12-10-Post_Streetscooter-9409.jpg) |
+| Mercedes Sprinter | Herranderssvensson | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:2018_MB_Sprinter_3.jpg) |
+| Mercedes Vito / VW Transporter | Thomas doerfer | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Mercedes-Benz_Vito_Kastenwagen_(447).JPG) |

@@ -1623,6 +1623,8 @@
     vito:     { name: 'Mercedes Vito / VW Transporter', info: 'ca. 6 m³', l: 2.7, w: 1.69 },
     custom:   { name: 'Eigene Maße', info: 'Länge und Breite selbst eingeben', l: 3, w: 1.7 },
   };
+  // Beispielfotos von Wikimedia Commons (freie Lizenzen, Namensnennung siehe „Bildnachweise“ im Laderaum-Fenster)
+  const VEHICLE_PHOTO_CREDITS = {"workxl": {"artist": "Geoprofi Lars", "license": "CC BY-SA 4.0", "page": "https://commons.wikimedia.org/wiki/File:DHL_Roelckestra%C3%9Fe_Berlin.jpg"}, "etransit": {"artist": "JustAnotherCarDesigner", "license": "CC0", "page": "https://commons.wikimedia.org/wiki/File:Ford_E-Transit_003.jpg"}, "ecustom": {"artist": "Alexander Migl", "license": "CC BY-SA 4.0", "page": "https://commons.wikimedia.org/wiki/File:Ford_E-Transit_Custom_MS-RT_IMG_5323.jpg"}, "work": {"artist": "ManuelB701", "license": "CC0", "page": "https://commons.wikimedia.org/wiki/File:Nieder-Olm_-_Pariser_Stra%C3%9Fe,_DHL-Streetscooter.jpg"}, "workl": {"artist": "Superbass", "license": "CC BY-SA 4.0", "page": "https://commons.wikimedia.org/wiki/File:2016-12-10-Post_Streetscooter-9409.jpg"}, "sprinter": {"artist": "Herranderssvensson", "license": "CC BY-SA 3.0", "page": "https://commons.wikimedia.org/wiki/File:2018_MB_Sprinter_3.jpg"}, "vito": {"artist": "Thomas doerfer", "license": "CC BY-SA 3.0", "page": "https://commons.wikimedia.org/wiki/File:Mercedes-Benz_Vito_Kastenwagen_(447).JPG"}};
   const ZONE_COLORS = ['#3B82F6', '#22A06B', '#E8890C', '#9B5DE5'];
   const ZONE_LETTERS = ['A', 'B', 'C', 'D'];
   const vehicleOf = () => {
@@ -1660,37 +1662,50 @@
     return `<span class="zc" style="--zc:${ZONE_COLORS[z]}" title="Ladebereich ${ZONE_LETTERS[z]}">${ZONE_LETTERS[z]}</span>`;
   };
   const fmtM = x => (Math.round(x * 100) / 100).toLocaleString('de-DE');
-  function cargoSvg(v, L, rear) {
-    // Nur der Laderaum. Bereiche wachsen mit dem Text. Bei Zugang von hinten liegt Bereich A (erste Stopps) an den Hecktüren.
-    const W = 290, k = W / v.w, H = Math.min(v.l * k, 420), padX = 38, top = 26;
+  /* Zugang je Bereich: 'R' = von hinten (Hecktür), 'S' = von der Seite (Schiebetür). Bei „Beides“ liegen die ersten Bereiche hinten (Hecktür), die späteren vorne (Seitentür) – frei änderbar. */
+  const accMode = () => settings.vehAccess === 'rear' || settings.vehAccess === 'side' ? settings.vehAccess : 'both';
+  function zoneAccess(n) {
+    const m = accMode();
+    if (m === 'rear') return Array(n).fill('R');
+    if (m === 'side') return Array(n).fill('S');
+    const mine = settings.zoneAcc && settings.zoneAcc[n];
+    return Array.from({ length: n }, (_, i) => (Array.isArray(mine) && mine[i]) || (i < Math.ceil(n / 2) ? 'R' : 'S'));
+  }
+  const rearLayout = () => accMode() !== 'side';             // Bereich A (erste Stopps) liegt bei Hecktür-Zugang hinten, bei reiner Seitentür vorne
+  function cargoSvg(v, L, acc) {
+    // Einfacher Grundriss nur vom Laderaum: Buchstabe, Paketzahl, Zugang. Antippen öffnet die Stopp-Liste des Bereichs.
+    const rear = rearLayout(), W = 290, k = W / v.w, H = Math.min(v.l * k, 400), padX = 38, top = 26;
     const n = L.zones.length, tot = Math.max(1, L.total);
     const raw = L.zones.map(z => .3 / n + .7 * (z.pk / tot)), sum = raw.reduce((a, b) => a + b, 0);
-    const charsPerLine = Math.max(10, Math.floor((W - 34) / 7.6));
-    const lines = z => Math.max(1, Math.ceil(z.streets.join(', ').length / charsPerLine));
-    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 92 + lines(z) * 16));
-    const total = hs.reduce((a, b) => a + b, 0);
+    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 84));
+    const total = hs.reduce((a, b) => a + b, 0), bottom = top + total;
     const order = L.zones.map((_, i) => i); if (rear) order.reverse();       // von vorn (oben) nach hinten (unten)
     let y = top; const parts = [];
     order.forEach((zi, row) => {
-      const z = L.zones[zi], h = hs[zi], c = ZONE_COLORS[zi];
-      parts.push(`<rect x="${padX}" y="${y.toFixed(1)}" width="${W.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".86"/>`);
-      if (row > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5"/>`);
-      parts.push(`<foreignObject x="${padX + 14}" y="${(y + 6).toFixed(1)}" width="${(W - 28).toFixed(1)}" height="${(h - 12).toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml" class="zbox"><b class="zl">${ZONE_LETTERS[zi]}</b><span class="zp">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</span><span class="zs">${esc(z.streets.join(', '))}</span></div></foreignObject>`);
+      const z = L.zones[zi], h = hs[zi], c = ZONE_COLORS[zi], cy = y + h / 2;
+      parts.push(`<g class="zone" data-zone="${zi}" role="button" tabindex="0" aria-label="Bereich ${ZONE_LETTERS[zi]}: ${z.pk} Pakete, Liste öffnen">
+        <rect x="${padX}" y="${y.toFixed(1)}" width="${W}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".88"/>
+        <text x="${padX + W / 2}" y="${(cy - 12).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="34" font-weight="800" fill="#fff">${ZONE_LETTERS[zi]}</text>
+        <text x="${padX + W / 2}" y="${(cy + 15).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</text>
+        <g transform="translate(${padX + W / 2},${(cy + 34).toFixed(1)})"><rect x="-44" y="-9" width="88" height="18" rx="9" fill="#000" fill-opacity=".3"/><text text-anchor="middle" dominant-baseline="middle" y=".5" font-size="10" font-weight="800" fill="#fff">${acc[zi] === 'R' ? 'HECKTÜR' : 'SEITENTÜR'}</text></g></g>`);
+      if (row > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5" pointer-events="none"/>`);
       y += h;
     });
-    const archY = top + total * .62, arch = 11, bottom = top + total;
-    const side = rear ? '' : `<line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(top + 8).toFixed(1)}" y2="${(top + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
-      <text transform="translate(${padX + W + 20},${(top + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>`;
-    const door = rear ? `<line x1="${padX + 4}" x2="${padX + W - 4}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
-      <text x="${padX + W / 2}" y="${(bottom + 24).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="800" fill="var(--accent)">ZUGANG · HECKTÜREN</text>`
+    const anyR = acc.includes('R'), anyS = acc.includes('S');
+    const frontY = top + 8;
+    const side = anyS ? `<line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${frontY}" y2="${(frontY + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text transform="translate(${padX + W + 20},${(frontY + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>` : '';
+    const door = anyR ? `<line x1="${padX + 4}" x2="${padX + W - 4}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text x="${padX + W / 2}" y="${(bottom + 24).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">HECKTÜREN</text>`
       : `<line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
       <text x="${padX + W / 2}" y="${(bottom + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>`;
-    return `<svg viewBox="0 0 ${(W + padX * 2).toFixed(0)} ${(bottom + 46).toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
+    const archY = top + total * .62;
+    return `<svg viewBox="0 0 ${(W + padX * 2).toFixed(0)} ${(bottom + 46).toFixed(0)}" class="cargo" role="group" aria-label="Laderaum von oben mit ${n} Bereichen">
       <text x="${padX + W / 2}" y="${top - 9}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">VORNE</text>
-      <clipPath id="ldclip"><rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10"/></clipPath>
+      <clipPath id="ldclip"><rect x="${padX}" y="${top}" width="${W}" height="${total.toFixed(1)}" rx="10"/></clipPath>
       <g clip-path="url(#ldclip)">${parts.join('')}
-        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch}" height="70" rx="3" fill="#000" fill-opacity=".28"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch}" height="70" rx="3" fill="#000" fill-opacity=".28"/></g>
-      <rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3"/>
+        <rect x="${padX}" y="${archY.toFixed(1)}" width="11" height="70" rx="3" fill="#000" fill-opacity=".28" pointer-events="none"/><rect x="${padX + W - 11}" y="${archY.toFixed(1)}" width="11" height="70" rx="3" fill="#000" fill-opacity=".28" pointer-events="none"/></g>
+      <rect x="${padX}" y="${top}" width="${W}" height="${total.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3" pointer-events="none"/>
       ${side}${door}
       <text x="${padX + W / 2}" y="${(bottom + 40).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">Laderaum ca. ${fmtM(v.l)} × ${fmtM(v.w)} m</text></svg>`;
   }
@@ -1710,41 +1725,69 @@
     });
   }
   const VAN_ICON = '<svg viewBox="0 0 120 70" class="vanico"><path d="M8 18h66v34H8zM74 26h22l16 14v12H74z" fill="currentColor" opacity=".16" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M82 30h12l9 9H82z" fill="currentColor" opacity=".4"/><circle cx="30" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/><circle cx="92" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/></svg>';
+  const photoOf = k => vPhotos()[k] || (VEHICLE_PHOTO_CREDITS[k] ? `img/vehicles/${k}.jpg` : null);
   function openLoadSheet() {
     if (!settings.vehicle) { settings.vehicle = 'etransit'; persist(); }
-    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n), rear = (settings.vehAccess || 'rear') === 'rear', photos = vPhotos();
-    const cards = Object.entries(VEHICLES).map(([k, x]) => `<div class="vcard${k === v.id ? ' on' : ''}" data-veh="${k}" role="button" tabindex="0" aria-pressed="${k === v.id}">
-      <div class="vph">${photos[k] ? `<img src="${photos[k]}" alt="">` : VAN_ICON}</div><b>${esc(x.name)}</b><small>${esc(x.info)}</small>
-      ${k === v.id ? `<div class="vact"><label class="vbtn">${photos[k] ? 'Foto ändern' : 'Eigenes Foto'}<input type="file" accept="image/*" data-vfile="${k}" hidden></label>${photos[k] ? `<button type="button" class="vbtn" data-vdel="${k}">Entfernen</button>` : ''}</div>` : ''}</div>`).join('');
+    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n), acc = zoneAccess(n), mode = accMode(), own = vPhotos();
+    const cards = Object.entries(VEHICLES).map(([k, x]) => {
+      const ph = photoOf(k), cr = VEHICLE_PHOTO_CREDITS[k];
+      return `<div class="vcard${k === v.id ? ' on' : ''}" data-veh="${k}" role="button" tabindex="0" aria-pressed="${k === v.id}">
+      <div class="vph">${ph ? `<img src="${ph}" alt="" loading="lazy">` : VAN_ICON}</div><b>${esc(x.name)}</b><small>${esc(x.info)}</small>
+      ${k === v.id ? `<div class="vact"><label class="vbtn">${own[k] ? 'Foto ändern' : 'Eigenes Foto'}<input type="file" accept="image/*" data-vfile="${k}" hidden></label>${own[k] ? `<button type="button" class="vbtn" data-vdel="${k}">Entfernen</button>` : ''}</div>` : ''}</div>`;
+    }).join('');
+    const credits = Object.entries(VEHICLE_PHOTO_CREDITS).map(([k, c]) => `<li>${esc(VEHICLES[k].name)}: <a href="${esc(c.page)}" target="_blank" rel="noopener">Foto von ${esc(c.artist)}</a>, ${esc(c.license)}</li>`).join('');
     const empty = !L.count;
-    const list = L.zones.map((z, i) => `<li class="zrow"><span class="zc big" style="--zc:${ZONE_COLORS[i]}">${ZONE_LETTERS[i]}</span>
-      <div class="zt"><b>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</b>
-      <small>${z.streets.length ? esc(z.streets.join(', ')) : 'leer'}</small></div></li>`).join('');
-    const loadOrder = (rear ? L.zones.map((_, i) => ZONE_LETTERS[i]).reverse() : L.zones.map((_, i) => ZONE_LETTERS[i]).reverse()).join(' → ');
-    const tip = rear
-      ? `<b>So laden (Zugang von hinten):</b> von vorn nach hinten – ${esc(loadOrder)}. Bereich A mit den ersten Stopps liegt zuletzt direkt an den Hecktüren.`
-      : `<b>So laden (Zugang seitlich):</b> von hinten nach vorn – ${esc(loadOrder)}. Bereich A kommt zuletzt, vorne an die Schiebetür.`;
+    const order = L.zones.map((_, i) => ZONE_LETTERS[i]).reverse().join(' → ');
+    const tip = mode === 'side'
+      ? `<b>So laden:</b> von hinten nach vorn – ${esc(order)}. Bereich A kommt zuletzt, vorne an die Schiebetür.`
+      : `<b>So laden (von hinten):</b> von vorn nach hinten – ${esc(order)}. Bereich A kommt zuletzt, direkt an die Hecktüren.${mode === 'both' ? ' Bereiche mit „Seitentür“ holst du später über die Schiebetür heraus.' : ''}`;
     const steppers = L.zones.slice(1).map((z, i) => `<div class="cutrow"><span class="zc" style="--zc:${ZONE_COLORS[i + 1]}">${ZONE_LETTERS[i + 1]}</span><span class="cuttxt">beginnt bei Stopp Nr. <b>${z.from ?? '–'}</b></span>
       <span class="cutbtns"><button type="button" data-cut="${i}" data-d="-1" aria-label="Eine Stelle früher">−</button><button type="button" data-cut="${i}" data-d="1" aria-label="Eine Stelle später">+</button></span></div>`).join('');
     openSheet('Laderaum', `<div class="ld">
-      <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche und sagt, welche Stopps (Straßen) wohin gehören.</p>
+      <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche. Tippe auf einen Bereich, dann siehst du alle Stopps darin.</p>
       <h3 class="mini">Fahrzeug</h3>
       <div class="vgrid">${cards}</div>
-      <p class="ld-info">${esc(v.info)} · Richtwerte, bitte prüfen. Fotos bleiben nur auf deinem Gerät.</p>
+      <p class="ld-info">Maße sind Richtwerte, bitte prüfen. Eigene Fotos bleiben nur auf deinem Gerät.</p>
       ${v.id === 'custom' ? `<div class="ld-custom"><label class="field"><span>Länge (m)</span><input id="ld-l" type="number" step="0.1" min="1" max="8" inputmode="decimal" value="${fmtM(v.l).replace(',', '.')}"></label><label class="field"><span>Breite (m)</span><input id="ld-w" type="number" step="0.05" min="1" max="2.5" inputmode="decimal" value="${fmtM(v.w).replace(',', '.')}"></label></div>` : ''}
       <h3 class="mini">Wo holst du die Pakete raus?</h3>
-      <div class="segmented" id="ld-acc">${[['rear', 'Von hinten'], ['side', 'Seitentür']].map(([k, t]) => `<button type="button" data-acc="${k}" aria-pressed="${(rear ? 'rear' : 'side') === k}">${t}</button>`).join('')}</div>
+      <div class="segmented" id="ld-acc">${[['both', 'Beides'], ['rear', 'Von hinten'], ['side', 'Seitentür']].map(([k, t]) => `<button type="button" data-acc="${k}" aria-pressed="${mode === k}">${t}</button>`).join('')}</div>
       <h3 class="mini">Bereiche</h3>
       <div class="segmented ld-n" id="ld-n">${[2, 3, 4].map(k => `<button type="button" data-zn="${k}" aria-pressed="${k === n}">${k} Bereiche</button>`).join('')}</div>
       ${empty ? '<p class="ld-empty">Noch keine Stopps. Füge Adressen hinzu und optimiere die Route – dann erscheint hier die Aufteilung.</p>' : `
-      <div class="ld-draw">${cargoSvg(v, L, rear)}</div>
+      <div class="ld-draw">${cargoSvg(v, L, acc)}</div>
+      <p class="ld-hint">Bereich antippen: alle Stopps und Straßen von hinten nach vorn</p>
       <div class="ld-tip">${tip}</div>
       <h3 class="mini">Grenzen anpassen ${L.manual ? '<button type="button" class="link" data-cutreset>Automatisch</button>' : '<small class="muted">(automatisch nach Paketzahl)</small>'}</h3>
       <div class="cuts">${steppers}</div>
-      <ol class="ld-list">${list}</ol>
       ${route ? '' : '<p class="ld-empty">Noch ohne Optimierung – die Reihenfolge entspricht deiner Liste.</p>'}
       <label class="switch"><input type="checkbox" id="ld-chips" ${settings.zonesInList === false ? '' : 'checked'}><span class="track"><span class="thumb"></span></span><span>Bereich (A, B, C …) in der Route anzeigen</span></label>`}
+      <details class="credits"><summary>Bildnachweise</summary><p>Beispielfotos von Wikimedia Commons (freie Lizenzen):</p><ul>${credits}</ul></details>
     </div>`);
+  }
+  /** Fenster mit allen Stopps eines Bereichs – von hinten nach vorn */
+  function openZonePop(zi) {
+    const n = settings.zoneN || 3, L = loadZones(n), z = L.zones[zi]; if (!z) return;
+    const acc = zoneAccess(n), mode = accMode();
+    const seq = rearLayout() ? z.stops : z.stops.slice().reverse();                 // Reihenfolge im Laderaum: hinten → vorne
+    const numOf = {}; if (route) route.order.forEach((id, i) => { numOf[id] = i + 1; });
+    const rows = seq.map((s, i) => `<li class="zp-row"><span class="zp-n">${numOf[s.id] || '–'}</span><div class="zp-t"><b>${esc(s.label.split(',')[0])}</b><small>${esc(s.label.split(',').slice(1, 2).join('').trim())}</small></div><span class="pk">${ICON.box}${s.pk || 1}</span></li>`).join('');
+    const el = document.createElement('div');
+    el.className = 'zmodal';
+    el.innerHTML = `<div class="zcard" role="dialog" aria-label="Bereich ${ZONE_LETTERS[zi]}">
+      <div class="zhead"><span class="zc big" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}</span><div><h2>Bereich ${ZONE_LETTERS[zi]}</h2><p>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</p></div><button type="button" class="circle" data-zclose aria-label="Schließen">${ICON.check.replace('M5 12.5l4.5 4.5L19 7.5', 'M6 6l12 12M18 6 6 18')}</button></div>
+      ${mode === 'both' ? `<div class="segmented zacc">${[['R', 'Hecktür'], ['S', 'Seitentür']].map(([k, t]) => `<button type="button" data-zacc="${k}" aria-pressed="${acc[zi] === k}">${t}</button>`).join('')}</div>` : `<p class="zp-acc">Zugang: ${mode === 'rear' ? 'Hecktür' : 'Seitentür'}</p>`}
+      <p class="zp-dir">${rearLayout() ? 'Von hinten (Tür) nach vorn' : 'Von hinten nach vorn (Schiebetür vorne)'}</p>
+      <ol class="zp-list">${rows || '<li class="zp-row">Keine Stopps</li>'}</ol></div>`;
+    document.body.appendChild(el);
+    const close = () => el.remove();
+    el.addEventListener('click', e => {
+      if (e.target === el || e.target.closest('[data-zclose]')) return close();
+      const za = e.target.closest('[data-zacc]');
+      if (za) {
+        const cur = zoneAccess(n).slice(); cur[zi] = za.dataset.zacc; settings.zoneAcc = Object.assign({}, settings.zoneAcc, { [n]: cur }); persist();
+        el.querySelectorAll('[data-zacc]').forEach(b => b.setAttribute('aria-pressed', b === za)); openLoadSheet();
+      }
+    });
   }
   $('#top-load').onclick = openLoadSheet;
   const refreshLoad = () => { openLoadSheet(); if (route) renderResult(); };
@@ -1755,12 +1798,13 @@
     else if (t.id === 'ld-chips') { settings.zonesInList = t.checked; persist(); if (route) renderResult(); }
   });
   $('#sheet-body').addEventListener('click', e => {
-    if (e.target.closest('label.vbtn')) return;                                            // Foto wählen: Dateiauswahl öffnet sich selbst
+    if (e.target.closest('label.vbtn') || e.target.closest('.credits')) return;                  // Dateiauswahl / Bildnachweise
+    const zone = e.target.closest('[data-zone]'); if (zone) { openZonePop(+zone.dataset.zone); return; }
     const veh = e.target.closest('[data-veh]');
     if (veh && !e.target.closest('.vact')) { settings.vehicle = veh.dataset.veh; persist(); refreshLoad(); return; }
     const del = e.target.closest('[data-vdel]');
     if (del) { const ph = vPhotos(); delete ph[del.dataset.vdel]; try { localStorage.setItem('tp.vphotos', JSON.stringify(ph)); } catch (_) {} openLoadSheet(); return; }
-    const acc = e.target.closest('[data-acc]'); if (acc) { settings.vehAccess = acc.dataset.acc; persist(); openLoadSheet(); return; }
+    const acc = e.target.closest('[data-acc]'); if (acc) { settings.vehAccess = acc.dataset.acc; persist(); refreshLoad(); return; }
     const zn = e.target.closest('[data-zn]'); if (zn) { settings.zoneN = +zn.dataset.zn; persist(); refreshLoad(); return; }
     if (e.target.closest('[data-cutreset]')) { if (settings.zoneCuts) delete settings.zoneCuts[settings.zoneN || 3]; persist(); refreshLoad(); return; }
     const cb = e.target.closest('[data-cut]');
@@ -1771,7 +1815,7 @@
       settings.zoneCuts = Object.assign({}, settings.zoneCuts, { [n]: cuts }); persist(); refreshLoad();
     }
   });
-  addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.vcard'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); c.click(); } });
+  addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.vcard,[data-zone]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); if (c.dataset.zone != null) openZonePop(+c.dataset.zone); else c.click(); } });
 
   /* ---------- Blatt: Menü, Google-Abschnitte, Paketstellen ---------- */
   function openSheet(title, html) {
