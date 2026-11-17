@@ -102,3 +102,8 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Stabile Route: neue Adressen werden an der günstigsten Stelle eingefügt, ohne die übrige Reihenfolge zu ändern; nur „Route optimieren“ sortiert neu. Routendienst-Anfragen werden bis zu dreimal versucht, damit nicht versehentlich mit Luftlinie (anderer Reihenfolge) gerechnet wird
 - Eingabeliste ist nummeriert
 - Vorschau am Punkt überarbeitet: Nummer, Straße, Ort, große Paketzahl, „Erledigt“ und „In Liste“; bleibt beim Neuzeichnen der Karte offen
+
+## Version 12
+
+- Apple Karten wird nur auf iPhone/iPad angeboten (auf Android öffnet der Link nur eine Webseite ohne Navigation); wer es auf Android gewählt hatte, bekommt automatisch Google Maps
+- MAPS.ME: Route ab deinem Standort, auf Android per Intent-Link direkt in die App (kein leerer Browser-Tab), mit Weiterleitung zum Play Store, falls die App fehlt; auf iPhone/iPad per `mapsme://`

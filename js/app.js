@@ -34,15 +34,21 @@
     mapsme: { name: 'MAPS.ME', color: '#2FB75A', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>' },
   };
   const ll = p => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
-  function navUrl(p, app = settings.nav) {
+  const IS_APPLE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  /** Apple Karten gibt es nur auf Apple-Geräten; auf Android öffnet der Link nur eine Webseite – dort nimmt die App Google Maps */
+  const navKey = () => (settings.nav === 'apple' && !IS_APPLE ? 'google' : (NAV[settings.nav] ? settings.nav : 'google'));
+  function mapsmeUrl(dll, name, me) {       // Route (mit Startpunkt) oder nur der Zielpunkt
+    const n = encodeURIComponent(name || 'Ziel');
+    const q = me ? `route?sll=${me.lat.toFixed(6)},${me.lon.toFixed(6)}&saddr=${encodeURIComponent('Mein Standort')}&dll=${dll}&daddr=${n}&type=vehicle` : `map?v=1&ll=${dll}&n=${n}`;
+    if (!IS_ANDROID) return `mapsme://${q}`;
+    const store = encodeURIComponent('https://play.google.com/store/apps/details?id=com.mapswithme.maps.pro');
+    return `intent://${q}#Intent;scheme=mapsme;package=com.mapswithme.maps.pro;S.browser_fallback_url=${store};end`;
+  }
+  function navUrl(p, app = navKey()) {
     if (app === 'waze') return `https://waze.com/ul?ll=${ll(p)}&navigate=yes`;
     if (app === 'apple') return `https://maps.apple.com/?daddr=${ll(p)}&dirflg=d`;
-    if (app === 'mapsme') {          // MAPS.ME braucht für eine Route den Startpunkt; ohne Standort zeigt es den Zielpunkt
-      const name = encodeURIComponent((p.label || p.name || 'Ziel').split(',')[0]);
-      let me = null; try { me = Me.pos; } catch (_) {}
-      return me ? `mapsme://route?sll=${me.lat},${me.lon}&saddr=${encodeURIComponent('Mein Standort')}&dll=${ll(p)}&daddr=${name}&type=vehicle`
-        : `mapsme://map?v=1&ll=${ll(p)}&n=${name}`;
-    }
+    if (app === 'mapsme') return `#nav-mapsme:${ll(p)}:${encodeURIComponent((p.label || p.name || 'Ziel').split(',')[0])}`;   // wird beim Antippen mit deinem Standort geöffnet
     return `https://www.google.com/maps/dir/?api=1&destination=${ll(p)}&travelmode=driving`;
   }
   function googleMultiUrl(origin, pts, dest) {
@@ -136,8 +142,8 @@
 
   /* ---------- Segmented / Choice UI ---------- */
   function renderNavChoices(el, compact) {
-    el.innerHTML = Object.entries(NAV).map(([k, v]) =>
-      `<button class="choice" data-nav="${k}" aria-pressed="${settings.nav === k}">
+    el.innerHTML = Object.entries(NAV).filter(([k]) => k !== 'apple' || IS_APPLE).map(([k, v]) =>
+      `<button class="choice" data-nav="${k}" aria-pressed="${navKey() === k}">
          <span class="logo" style="background:${v.color};color:${v.ink}">${v.icon}</span>${compact ? v.name.replace(' Maps', '').replace(' Karten', '') : v.name}
        </button>`).join('');
     el.onclick = e => {
@@ -145,7 +151,7 @@
       el.dataset.value = b.dataset.nav;
       el.querySelectorAll('[data-nav]').forEach(x => x.setAttribute('aria-pressed', x === b));
     };
-    el.dataset.value = settings.nav;
+    el.dataset.value = navKey();
   }
   function renderMapStyleChoices(el) {
     const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
@@ -1203,12 +1209,12 @@
      reopt = true: offene Stopps neu sortieren (erledigte bleiben vorn stehen)
      reopt = false: Reihenfolge behalten, nur Strecke neu berechnen (nach Löschen/Bearbeiten) */
   let planning = false, planAgain = null, gpsNote = '';
-  function whereAmI() {                          // aktuelle Position (frisch genug oder kurz nachfragen)
+  function whereAmI(timeout = 6000) {                          // aktuelle Position (frisch genug oder kurz nachfragen)
     if (Me.pos && Date.now() - (Me.pos.t || 0) < 90000) return Promise.resolve(Me.pos);
     if (!navigator.geolocation) return Promise.resolve(null);
     return new Promise(res => navigator.geolocation.getCurrentPosition(
       p => res({ lat: p.coords.latitude, lon: p.coords.longitude, t: Date.now() }), () => res(null),
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 6000 }));
+      { enableHighAccuracy: true, maximumAge: 30000, timeout }));
   }
   async function plan(reopt) {
     if (planning) { planAgain = planAgain || reopt; return; }
@@ -1292,10 +1298,21 @@
     const db = $('#dock-opt'); if (db) { db.classList.toggle('loading', on); db.disabled = on; }
   }
   $('#optimize-btn').onclick = () => plan(true);
+  document.addEventListener('click', async e => {              // MAPS.ME: Route ab deinem Standort, direkt in der App (kein leerer Tab)
+    const a = e.target.closest('a[href^="#nav-mapsme:"]'); if (!a) return;
+    e.preventDefault();
+    const [, dll, name] = a.getAttribute('href').split(':');
+    const hadPos = Me.pos && Date.now() - (Me.pos.t || 0) < 90000;
+    if (!hadPos) toast('Standort wird bestimmt …', 3000);
+    const me = await whereAmI(3500);
+    location.href = mapsmeUrl(dll, decodeURIComponent(name), me);
+  });
   $('#top-depot').onclick = () => {                       // Direkt zum Depot navigieren
     const d = settings.depot; if (!d) return;
-    toast(`Navigation zum Depot (${NAV[settings.nav].name})`, 1800);
-    window.open(navUrl(d), '_blank', 'noopener');
+    toast(`Navigation zum Depot (${NAV[navKey()].name})`, 1800);
+    const u = navUrl(d);
+    if (u.startsWith('#nav-mapsme:')) { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); }
+    else window.open(u, '_blank', 'noopener');
   };
 
   /* ---------- Ergebnis ---------- */
@@ -1399,7 +1416,7 @@
     const d = settings.depot;
 
     // Nächster Stopp
-    const app = NAV[settings.nav];
+    const app = NAV[navKey()];
     const nc = $('#next-card');
     if (cur !== -1) {
       const s = ordered[cur], leg = route.legs[cur];
