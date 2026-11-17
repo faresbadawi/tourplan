@@ -134,3 +134,9 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 ## Version 17
 
 - Laderaum: nur noch der Laderaum wird gezeichnet (ohne Fahrerkabine), breit und gut lesbar; in jedem Bereich stehen Paketzahl, Stopp-Nummern und alle Straßennamen vollständig; die Liste darunter nennt ebenfalls alle Straßen
+
+## Version 18
+
+- Laderaum: Zugang „Von hinten“ (Standard) oder „Seitentür“ – bei Zugang von hinten liegt Bereich A (erste Stopps) direkt an den Hecktüren, bei Seitentür vorne an der Schiebetür; Ladehinweis passt sich an
+- Bereichsgrenzen selbst verschieben (±1 Stopp je Grenze), „Automatisch“ stellt die Aufteilung nach Paketzahl wieder her
+- Fahrzeuge als Karten zum Auswählen; zu jedem Fahrzeug lässt sich ein eigenes Foto hinzufügen (nur auf dem Gerät gespeichert, auf ca. 480 px verkleinert)

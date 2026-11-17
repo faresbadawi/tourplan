@@ -1632,14 +1632,17 @@
     return v;
   };
   const streetOf = s => s.label.split(',')[0].replace(/\s+\d+\s?[a-zA-Z]?(\s*[-–/]\s*\d+\s?[a-zA-Z]?)?$/, '').trim();
-  /** Stopps (offene, in Fahrtreihenfolge) in n zusammenhängende Bereiche mit ungefähr gleich vielen Paketen teilen */
+  /** Stopps (offene, in Fahrtreihenfolge) in n zusammenhängende Bereiche teilen: automatisch nach Paketzahl oder mit eigenen Grenzen */
   function loadZones(n) {
     const seq = (route ? route.order.filter(id => !route.done[id]) : stops.filter(s => s.status === 'ok').map(s => s.id)).map(stopById).filter(Boolean);
     const total = seq.reduce((a, s) => a + (s.pk || 1), 0);
+    const mine = settings.zoneCuts && settings.zoneCuts[n];
+    const manual = Array.isArray(mine) && mine.length === n - 1 && seq.length >= n && mine.every((c, k) => c > (k ? mine[k - 1] : 0) && c < seq.length);
     const zones = Array.from({ length: n }, () => ({ stops: [], pk: 0 }));
     let cum = 0;
-    seq.forEach(s => {
-      const w = s.pk || 1; const z = Math.min(n - 1, Math.floor(((cum + w / 2) / Math.max(1, total)) * n));
+    seq.forEach((s, idx) => {
+      const w = s.pk || 1;
+      const z = manual ? mine.filter(c => c <= idx).length : Math.min(n - 1, Math.floor(((cum + w / 2) / Math.max(1, total)) * n));
       zones[z].stops.push(s); zones[z].pk += w; cum += w;
     });
     const zoneOf = {}; zones.forEach((z, i) => z.stops.forEach(s => { zoneOf[s.id] = i; }));
@@ -1648,7 +1651,8 @@
       z.streets = [...new Set(z.stops.map(streetOf))];
       z.from = z.stops.length ? numOf[z.stops[0].id] : null; z.to = z.stops.length ? numOf[z.stops[z.stops.length - 1].id] : null;
     });
-    return { zones, total, count: seq.length, zoneOf };
+    const cuts = []; let acc = 0; zones.slice(0, -1).forEach(z => { acc += z.stops.length; cuts.push(acc); });
+    return { zones, total, count: seq.length, zoneOf, cuts, manual };
   }
   const zoneChip = id => {
     if (!settings.vehicle || settings.zonesInList === false || !route) return '';
@@ -1656,69 +1660,118 @@
     return `<span class="zc" style="--zc:${ZONE_COLORS[z]}" title="Ladebereich ${ZONE_LETTERS[z]}">${ZONE_LETTERS[z]}</span>`;
   };
   const fmtM = x => (Math.round(x * 100) / 100).toLocaleString('de-DE');
-  function cargoSvg(v, L) {
-    // Nur der Laderaum (ohne Fahrerkabine). Bereiche wachsen mit dem Text, damit alle Straßennamen lesbar sind.
-    const W = 290, k = W / v.w, H = Math.min(v.l * k, 420), padX = 38, top = 26;      // Breite fest groß, damit der Text lesbar ist
+  function cargoSvg(v, L, rear) {
+    // Nur der Laderaum. Bereiche wachsen mit dem Text. Bei Zugang von hinten liegt Bereich A (erste Stopps) an den Hecktüren.
+    const W = 290, k = W / v.w, H = Math.min(v.l * k, 420), padX = 38, top = 26;
     const n = L.zones.length, tot = Math.max(1, L.total);
     const raw = L.zones.map(z => .3 / n + .7 * (z.pk / tot)), sum = raw.reduce((a, b) => a + b, 0);
     const charsPerLine = Math.max(10, Math.floor((W - 34) / 7.6));
-    const lines = z => { const t = z.streets.join(', '); return Math.max(1, Math.ceil(t.length / charsPerLine)); };
-    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 74 + 18 + lines(z) * 16));
+    const lines = z => Math.max(1, Math.ceil(z.streets.join(', ').length / charsPerLine));
+    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 92 + lines(z) * 16));
     const total = hs.reduce((a, b) => a + b, 0);
+    const order = L.zones.map((_, i) => i); if (rear) order.reverse();       // von vorn (oben) nach hinten (unten)
     let y = top; const parts = [];
-    L.zones.forEach((z, i) => {
-      const h = hs[i], c = ZONE_COLORS[i];
+    order.forEach((zi, row) => {
+      const z = L.zones[zi], h = hs[zi], c = ZONE_COLORS[zi];
       parts.push(`<rect x="${padX}" y="${y.toFixed(1)}" width="${W.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".86"/>`);
-      if (i > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5"/>`);
-      parts.push(`<foreignObject x="${padX + 14}" y="${(y + 6).toFixed(1)}" width="${(W - 28).toFixed(1)}" height="${(h - 12).toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml" class="zbox"><b class="zl">${ZONE_LETTERS[i]}</b><span class="zp">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</span><span class="zs">${esc(z.streets.join(', '))}</span></div></foreignObject>`);
+      if (row > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5"/>`);
+      parts.push(`<foreignObject x="${padX + 14}" y="${(y + 6).toFixed(1)}" width="${(W - 28).toFixed(1)}" height="${(h - 12).toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml" class="zbox"><b class="zl">${ZONE_LETTERS[zi]}</b><span class="zp">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</span><span class="zs">${esc(z.streets.join(', '))}</span></div></foreignObject>`);
       y += h;
     });
     const archY = top + total * .62, arch = 11, bottom = top + total;
-    return `<svg viewBox="0 0 ${(W + padX * 2).toFixed(0)} ${(bottom + 44).toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
+    const side = rear ? '' : `<line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(top + 8).toFixed(1)}" y2="${(top + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text transform="translate(${padX + W + 20},${(top + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>`;
+    const door = rear ? `<line x1="${padX + 4}" x2="${padX + W - 4}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text x="${padX + W / 2}" y="${(bottom + 24).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="800" fill="var(--accent)">ZUGANG · HECKTÜREN</text>`
+      : `<line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
+      <text x="${padX + W / 2}" y="${(bottom + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>`;
+    return `<svg viewBox="0 0 ${(W + padX * 2).toFixed(0)} ${(bottom + 46).toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
       <text x="${padX + W / 2}" y="${top - 9}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">VORNE</text>
       <clipPath id="ldclip"><rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10"/></clipPath>
       <g clip-path="url(#ldclip)">${parts.join('')}
-        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="70" rx="3" fill="#000" fill-opacity=".28"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="70" rx="3" fill="#000" fill-opacity=".28"/></g>
+        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch}" height="70" rx="3" fill="#000" fill-opacity=".28"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch}" height="70" rx="3" fill="#000" fill-opacity=".28"/></g>
       <rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3"/>
-      <line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(top + 8).toFixed(1)}" y2="${(top + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
-      <text transform="translate(${padX + W + 20},${(top + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>
-      <line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
-      <text x="${padX + W / 2}" y="${(bottom + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>
-      <text x="${padX + W / 2}" y="${(bottom + 37).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">Laderaum ca. ${fmtM(v.l)} × ${fmtM(v.w)} m</text></svg>`;
+      ${side}${door}
+      <text x="${padX + W / 2}" y="${(bottom + 40).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">Laderaum ca. ${fmtM(v.l)} × ${fmtM(v.w)} m</text></svg>`;
   }
+  /* Eigene Fotos der Fahrzeuge (nur auf diesem Gerät gespeichert, auf ca. 480 px verkleinert) */
+  const vPhotos = () => { try { return JSON.parse(localStorage.getItem('tp.vphotos')) || {}; } catch (_) { return {}; } };
+  function saveVPhoto(id, file) {
+    return new Promise(res => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const sc = Math.min(1, 480 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        const ph = vPhotos(); ph[id] = c.toDataURL('image/jpeg', .72);
+        try { localStorage.setItem('tp.vphotos', JSON.stringify(ph)); res(true); } catch (_) { res(false); }
+      };
+      img.onerror = () => res(false); img.src = url;
+    });
+  }
+  const VAN_ICON = '<svg viewBox="0 0 120 70" class="vanico"><path d="M8 18h66v34H8zM74 26h22l16 14v12H74z" fill="currentColor" opacity=".16" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M82 30h12l9 9H82z" fill="currentColor" opacity=".4"/><circle cx="30" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/><circle cx="92" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/></svg>';
   function openLoadSheet() {
     if (!settings.vehicle) { settings.vehicle = 'etransit'; persist(); }
-    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n);
-    const opts = Object.entries(VEHICLES).map(([k, x]) => `<option value="${k}" ${k === v.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n), rear = (settings.vehAccess || 'rear') === 'rear', photos = vPhotos();
+    const cards = Object.entries(VEHICLES).map(([k, x]) => `<div class="vcard${k === v.id ? ' on' : ''}" data-veh="${k}" role="button" tabindex="0" aria-pressed="${k === v.id}">
+      <div class="vph">${photos[k] ? `<img src="${photos[k]}" alt="">` : VAN_ICON}</div><b>${esc(x.name)}</b><small>${esc(x.info)}</small>
+      ${k === v.id ? `<div class="vact"><label class="vbtn">${photos[k] ? 'Foto ändern' : 'Eigenes Foto'}<input type="file" accept="image/*" data-vfile="${k}" hidden></label>${photos[k] ? `<button type="button" class="vbtn" data-vdel="${k}">Entfernen</button>` : ''}</div>` : ''}</div>`).join('');
     const empty = !L.count;
     const list = L.zones.map((z, i) => `<li class="zrow"><span class="zc big" style="--zc:${ZONE_COLORS[i]}">${ZONE_LETTERS[i]}</span>
       <div class="zt"><b>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</b>
       <small>${z.streets.length ? esc(z.streets.join(', ')) : 'leer'}</small></div></li>`).join('');
-    const order = L.zones.map((_, i) => ZONE_LETTERS[i]).reverse().join(' → ');
+    const loadOrder = (rear ? L.zones.map((_, i) => ZONE_LETTERS[i]).reverse() : L.zones.map((_, i) => ZONE_LETTERS[i]).reverse()).join(' → ');
+    const tip = rear
+      ? `<b>So laden (Zugang von hinten):</b> von vorn nach hinten – ${esc(loadOrder)}. Bereich A mit den ersten Stopps liegt zuletzt direkt an den Hecktüren.`
+      : `<b>So laden (Zugang seitlich):</b> von hinten nach vorn – ${esc(loadOrder)}. Bereich A kommt zuletzt, vorne an die Schiebetür.`;
+    const steppers = L.zones.slice(1).map((z, i) => `<div class="cutrow"><span class="zc" style="--zc:${ZONE_COLORS[i + 1]}">${ZONE_LETTERS[i + 1]}</span><span class="cuttxt">beginnt bei Stopp Nr. <b>${z.from ?? '–'}</b></span>
+      <span class="cutbtns"><button type="button" data-cut="${i}" data-d="-1" aria-label="Eine Stelle früher">−</button><button type="button" data-cut="${i}" data-d="1" aria-label="Eine Stelle später">+</button></span></div>`).join('');
     openSheet('Laderaum', `<div class="ld">
       <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche und sagt, welche Stopps (Straßen) wohin gehören.</p>
-      <label class="field"><span>Fahrzeug</span><select id="ld-veh">${opts}</select></label>
-      <p class="ld-info">${esc(v.info)} · Richtwerte, bitte prüfen</p>
+      <h3 class="mini">Fahrzeug</h3>
+      <div class="vgrid">${cards}</div>
+      <p class="ld-info">${esc(v.info)} · Richtwerte, bitte prüfen. Fotos bleiben nur auf deinem Gerät.</p>
       ${v.id === 'custom' ? `<div class="ld-custom"><label class="field"><span>Länge (m)</span><input id="ld-l" type="number" step="0.1" min="1" max="8" inputmode="decimal" value="${fmtM(v.l).replace(',', '.')}"></label><label class="field"><span>Breite (m)</span><input id="ld-w" type="number" step="0.05" min="1" max="2.5" inputmode="decimal" value="${fmtM(v.w).replace(',', '.')}"></label></div>` : ''}
+      <h3 class="mini">Wo holst du die Pakete raus?</h3>
+      <div class="segmented" id="ld-acc">${[['rear', 'Von hinten'], ['side', 'Seitentür']].map(([k, t]) => `<button type="button" data-acc="${k}" aria-pressed="${(rear ? 'rear' : 'side') === k}">${t}</button>`).join('')}</div>
+      <h3 class="mini">Bereiche</h3>
       <div class="segmented ld-n" id="ld-n">${[2, 3, 4].map(k => `<button type="button" data-zn="${k}" aria-pressed="${k === n}">${k} Bereiche</button>`).join('')}</div>
       ${empty ? '<p class="ld-empty">Noch keine Stopps. Füge Adressen hinzu und optimiere die Route – dann erscheint hier die Aufteilung.</p>' : `
-      <div class="ld-draw">${cargoSvg(v, L)}</div>
+      <div class="ld-draw">${cargoSvg(v, L, rear)}</div>
+      <div class="ld-tip">${tip}</div>
+      <h3 class="mini">Grenzen anpassen ${L.manual ? '<button type="button" class="link" data-cutreset>Automatisch</button>' : '<small class="muted">(automatisch nach Paketzahl)</small>'}</h3>
+      <div class="cuts">${steppers}</div>
       <ol class="ld-list">${list}</ol>
-      <div class="ld-tip"><b>So laden:</b> von hinten nach vorn – ${esc(order)}. Bereich A kommt zuletzt, vorne an die Schiebetür, denn dort liegen die ersten Stopps.</div>
       ${route ? '' : '<p class="ld-empty">Noch ohne Optimierung – die Reihenfolge entspricht deiner Liste.</p>'}
       <label class="switch"><input type="checkbox" id="ld-chips" ${settings.zonesInList === false ? '' : 'checked'}><span class="track"><span class="thumb"></span></span><span>Bereich (A, B, C …) in der Route anzeigen</span></label>`}
     </div>`);
   }
   $('#top-load').onclick = openLoadSheet;
-  $('#sheet-body').addEventListener('change', e => {
-    if (e.target.id === 'ld-veh') { settings.vehicle = e.target.value; persist(); openLoadSheet(); if (route) renderResult(); }
-    else if (e.target.id === 'ld-l' || e.target.id === 'ld-w') { settings.vehCustom = { l: +$('#ld-l').value || 3, w: +$('#ld-w').value || 1.7 }; persist(); openLoadSheet(); }
-    else if (e.target.id === 'ld-chips') { settings.zonesInList = e.target.checked; persist(); if (route) renderResult(); }
+  const refreshLoad = () => { openLoadSheet(); if (route) renderResult(); };
+  $('#sheet-body').addEventListener('change', async e => {
+    const t = e.target;
+    if (t.dataset.vfile) { const ok = await saveVPhoto(t.dataset.vfile, t.files[0]); if (!ok) toast('Foto konnte nicht gespeichert werden'); openLoadSheet(); }
+    else if (t.id === 'ld-l' || t.id === 'ld-w') { settings.vehCustom = { l: +$('#ld-l').value || 3, w: +$('#ld-w').value || 1.7 }; persist(); openLoadSheet(); }
+    else if (t.id === 'ld-chips') { settings.zonesInList = t.checked; persist(); if (route) renderResult(); }
   });
   $('#sheet-body').addEventListener('click', e => {
-    const z = e.target.closest('[data-zn]'); if (!z) return;
-    settings.zoneN = +z.dataset.zn; persist(); openLoadSheet(); if (route) renderResult();
+    if (e.target.closest('label.vbtn')) return;                                            // Foto wählen: Dateiauswahl öffnet sich selbst
+    const veh = e.target.closest('[data-veh]');
+    if (veh && !e.target.closest('.vact')) { settings.vehicle = veh.dataset.veh; persist(); refreshLoad(); return; }
+    const del = e.target.closest('[data-vdel]');
+    if (del) { const ph = vPhotos(); delete ph[del.dataset.vdel]; try { localStorage.setItem('tp.vphotos', JSON.stringify(ph)); } catch (_) {} openLoadSheet(); return; }
+    const acc = e.target.closest('[data-acc]'); if (acc) { settings.vehAccess = acc.dataset.acc; persist(); openLoadSheet(); return; }
+    const zn = e.target.closest('[data-zn]'); if (zn) { settings.zoneN = +zn.dataset.zn; persist(); refreshLoad(); return; }
+    if (e.target.closest('[data-cutreset]')) { if (settings.zoneCuts) delete settings.zoneCuts[settings.zoneN || 3]; persist(); refreshLoad(); return; }
+    const cb = e.target.closest('[data-cut]');
+    if (cb) {                                                                              // Bereichsgrenze um einen Stopp verschieben
+      const n = settings.zoneN || 3, L = loadZones(n), i = +cb.dataset.cut, d = +cb.dataset.d, cuts = L.cuts.slice();
+      const lo = (i ? cuts[i - 1] : 0) + 1, hi = (i < cuts.length - 1 ? cuts[i + 1] : L.count) - 1;
+      cuts[i] = Math.max(lo, Math.min(hi, cuts[i] + d));
+      settings.zoneCuts = Object.assign({}, settings.zoneCuts, { [n]: cuts }); persist(); refreshLoad();
+    }
   });
+  addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.vcard'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); c.click(); } });
 
   /* ---------- Blatt: Menü, Google-Abschnitte, Paketstellen ---------- */
   function openSheet(title, html) {
