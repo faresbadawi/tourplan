@@ -1,5 +1,7 @@
 # Tourplan
 
+> Stand, Entscheidungen und Plan für die native App: [docs/UEBERGABE.md](docs/UEBERGABE.md)
+
 Web-App (PWA) für Zusteller: Adressen tippen, einfügen oder diktieren, beste Reihenfolge berechnen, Stopp für Stopp mit Waze, Google Maps oder Apple Karten fahren.
 
 - **Einrichtung:** Name, Depot/Zustellstützpunkt (Start und Ende jeder Tour), Navi-App, Hell/Dunkel.
