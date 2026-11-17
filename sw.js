@@ -1,4 +1,4 @@
-const CACHE = 'tourplan-v19';
+const CACHE = 'tourplan-v21';
 const TILES = 'tourplan-tiles', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
 let puts = 0;
 const trim = c => c.keys().then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - MAX_TILES)).map(k => c.delete(k))));
@@ -19,6 +19,20 @@ self.addEventListener('fetch', e => {
       if (r.ok || r.type === 'opaque') { const c = r.clone(); caches.open(TILES).then(x => { x.put(key, c); if (++puts % 200 === 0) trim(x); }); }
       return r;
     })));
+    return;
+  }
+  // Vektorkarte (OpenFreeMap): gespeicherte Teile zuerst; Stil und Kachel-Verzeichnis zuerst live (mit Ersatz aus dem Speicher)
+  if (u.hostname === 'tiles.openfreemap.org') {
+    const fixed = /\/planet\/\d|\/fonts\/|\/sprites\//.test(u.pathname);
+    e.respondWith((async () => {
+      const find = async () => (await caches.match(e.request, { cacheName: OFFLINE, ignoreVary: true })) || (await caches.match(e.request, { cacheName: TILES, ignoreVary: true }));
+      if (fixed) { const hit = await find(); if (hit) return hit; }
+      try {
+        const r = await fetch(e.request);
+        if (r.ok) { const c = r.clone(); caches.open(fixed ? TILES : OFFLINE).then(x => { x.put(e.request, c); if (fixed && ++puts % 200 === 0) trim(x); }); }
+        return r;
+      } catch (err) { const hit = await find(); if (hit) return hit; throw err; }
+    })());
     return;
   }
   if (u.origin !== location.origin) return;           // APIs, Fonts: immer live

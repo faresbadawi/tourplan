@@ -111,3 +111,9 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 ## Version 13
 
 - Depot-Knopf oben fragt erst nach („Zum Depot fahren?“ mit Depot-Name, Hinweis auf noch offene Stopps und der gewählten Navi-App); die Navigation startet erst nach „Ja, zum Depot“
+
+## Version 14
+
+- Neue Standardkarte „Straßen & Hausnummern“: Vektorkarte von OpenFreeMap (frei, ohne Schlüssel) mit Straßennamen, Hausnummern ab Zoomstufe 16 und Gebäuden, hell und dunkel
+- Offline-Speichern jetzt mit dieser Vektorkarte statt mit Rasterkacheln (deren Server verbieten das Vorab-Laden); Zoom 0–14 im gewählten Kreis, höhere Stufen werden daraus gezoomt – typisch 10–25 MB statt hunderter Kacheln; Fehler werden gezählt statt Fehlerseiten zu speichern
+- Navi-App „Andere Karten-App“ (Android): öffnet über einen geo:-Link die Auswahl der installierten Karten-Apps (MAPS.ME, Organic Maps, CoMaps …)

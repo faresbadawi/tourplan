@@ -5,11 +5,12 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   /* ---------- Zustand ---------- */
-  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'de', area: null, tomtom: '', meIcon: 'arrow' };
+  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'vec', area: null, tomtom: '', meIcon: 'arrow' };
   const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
   let settings = Object.assign({}, DEFAULTS, load('tp.settings', {}));
+  if (!settings.mapV2) { settings.mapStyle = 'vec'; settings.mapV2 = 1; }       // neue Vektorkarte als Standard
   // Einrichtung von einem anderen Gerät übernehmen (Link aus den Einstellungen)
   let imported = false;
   try {
@@ -31,13 +32,14 @@
     waze:   { name: 'Waze', color: '#33CCFF', ink: '#0B2C3A', icon: '<svg viewBox="0 0 24 24"><path d="M5 15.5a7.5 7.5 0 1 1 14.6-2.4c0 2.7-1.8 4.6-4.6 5.3"/><circle cx="9.5" cy="10.5" r=".6" fill="currentColor"/><circle cx="14.5" cy="10.5" r=".6" fill="currentColor"/><path d="M9.5 13.5c1.3 1.2 3.7 1.2 5 0"/><circle cx="8" cy="19" r="1.6"/><circle cx="15" cy="19" r="1.6"/></svg>' },
     google: { name: 'Google Maps', color: '#1A73E8', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>' },
     apple:  { name: 'Apple Karten', color: '#34C759', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M4 7l5-2 6 2 5-2v12l-5 2-6-2-5 2z"/><path d="M9 5v12M15 7v12"/></svg>' },
+    geo:    { name: 'Andere Karten-App', color: '#7B61FF', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>' },
     mapsme: { name: 'MAPS.ME', color: '#2FB75A', ink: '#fff', icon: '<svg viewBox="0 0 24 24"><path d="M4 6.5 9 4l6 2.5L20 4v13.5L15 20l-6-2.5L4 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>' },
   };
   const ll = p => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
   const IS_APPLE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const IS_ANDROID = /Android/i.test(navigator.userAgent);
   /** Apple Karten gibt es nur auf Apple-Geräten; auf Android öffnet der Link nur eine Webseite – dort nimmt die App Google Maps */
-  const navKey = () => (settings.nav === 'apple' && !IS_APPLE ? 'google' : (NAV[settings.nav] ? settings.nav : 'google'));
+  const navKey = () => ((settings.nav === 'apple' && !IS_APPLE) || (settings.nav === 'geo' && !IS_ANDROID) ? 'google' : (NAV[settings.nav] ? settings.nav : 'google'));
   function mapsmeUrl(dll, name, me) {       // Route (mit Startpunkt) oder nur der Zielpunkt
     const n = encodeURIComponent(name || 'Ziel');
     const q = me ? `route?sll=${me.lat.toFixed(6)},${me.lon.toFixed(6)}&saddr=${encodeURIComponent('Mein Standort')}&dll=${dll}&daddr=${n}&type=vehicle` : `map?v=1&ll=${dll}&n=${n}`;
@@ -47,6 +49,7 @@
   }
   function navUrl(p, app = navKey()) {
     if (app === 'waze') return `https://waze.com/ul?ll=${ll(p)}&navigate=yes`;
+    if (app === 'geo') return `geo:${ll(p)}?q=${ll(p)}(${encodeURIComponent((p.label || p.name || 'Ziel').split(',')[0])})`;   // Android fragt, welche Karten-App (z. B. MAPS.ME, Organic Maps)
     if (app === 'apple') return `https://maps.apple.com/?daddr=${ll(p)}&dirflg=d`;
     if (app === 'mapsme') return `#nav-mapsme:${ll(p)}:${encodeURIComponent((p.label || p.name || 'Ziel').split(',')[0])}`;   // wird beim Antippen mit deinem Standort geöffnet
     return `https://www.google.com/maps/dir/?api=1&destination=${ll(p)}&travelmode=driving`;
@@ -142,7 +145,7 @@
 
   /* ---------- Segmented / Choice UI ---------- */
   function renderNavChoices(el, compact) {
-    el.innerHTML = Object.entries(NAV).filter(([k]) => k !== 'apple' || IS_APPLE).map(([k, v]) =>
+    el.innerHTML = Object.entries(NAV).filter(([k]) => (k !== 'apple' || IS_APPLE) && (k !== 'geo' || IS_ANDROID)).map(([k, v]) =>
       `<button class="choice" data-nav="${k}" aria-pressed="${navKey() === k}">
          <span class="logo" style="background:${v.color};color:${v.ink}">${v.icon}</span>${compact ? v.name.replace(' Maps', '').replace(' Karten', '') : v.name}
        </button>`).join('');
@@ -310,6 +313,7 @@
   const HOME_ICON = '<svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke-width:2.4"><path d="M3 10.5 12 4l9 6.5V20H3z"/></svg>';
   const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
   const MAP_STYLES = {
+    vec: { name: 'Straßen & Hausnummern', filter: false, vector: true, attr: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; OpenMapTiles, Daten von OpenStreetMap' },
     de: { name: 'Deutschland', filter: true, attr: OSM_ATTR + ' · openstreetmap.de', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png' },
     hot: { name: 'Klar', filter: true, attr: OSM_ATTR + ' · Humanitarian OSM Team', url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png' },
     osm: { name: 'Standard', filter: true, attr: OSM_ATTR, url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
@@ -319,7 +323,35 @@
   };
   /** Karte hell oder dunkel – unabhängig vom Design der App wählbar */
   const mapDark = () => settings.mapMode === 'dark' ? true : settings.mapMode === 'light' ? false : isDark();
-  const mapStyle = () => (MAP_STYLES[settings.mapStyle] && (settings.mapStyle !== 'tomtom' || settings.tomtom)) ? settings.mapStyle : 'de';
+  /* ---------- Vektorkarte von OpenFreeMap: Straßennamen, Hausnummern, Gebäude; Offline-Speichern ist dort ausdrücklich erlaubt ---------- */
+  const OFM = 'https://tiles.openfreemap.org';
+  async function vecStyle(dark) {
+    const key = 'tp.vstyle.' + (dark ? 'd' : 'l');
+    let style = null;
+    try { const r = await fetch(`${OFM}/styles/${dark ? 'dark' : 'liberty'}`); if (r.ok) { style = await r.json(); try { localStorage.setItem(key, JSON.stringify(style)); } catch (_) {} } } catch (_) {}
+    if (!style) { try { style = JSON.parse(localStorage.getItem(key)); } catch (_) {} }
+    if (!style) return null;
+    style.layers = style.layers.filter(l => l.id !== 'building-3d').map(l => { if (l.id !== 'building') return l; const n = Object.assign({}, l, { minzoom: 12 }); delete n.maxzoom; return n; });
+    style.layers.push({ id: 'tp-housenumber', type: 'symbol', source: 'openmaptiles', 'source-layer': 'housenumber', minzoom: 16,
+      layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 11, 19, 16], 'text-padding': 1 },
+      paint: { 'text-color': dark ? '#F2F6FF' : '#2D3B52', 'text-halo-color': dark ? '#0B1220' : '#FFFFFF', 'text-halo-width': 1.8 } });
+    return style;
+  }
+  /** Grundkarte an eine Leaflet-Karte hängen (Rasterkacheln oder Vektorkarte) */
+  async function attachBase(owner, map, st, dark, nativeZoom) {
+    const token = owner.token = (owner.token || 0) + 1;
+    if (owner.tiles) { owner.tiles.remove(); owner.tiles = null; }
+    if (st.vector) {
+      if (!window.L || !L.maplibreGL) { toast('Vektorkarte konnte nicht geladen werden – bitte einen anderen Kartenstil wählen', 4000); return; }
+      const style = await vecStyle(dark);
+      if (token !== owner.token) return;
+      if (!style) { toast('Karte gerade nicht erreichbar', 3500); return; }
+      owner.tiles = L.maplibreGL({ style, attribution: st.attr }).addTo(map);
+    } else {
+      owner.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(map);
+    }
+  }
+  const mapStyle = () => (MAP_STYLES[settings.mapStyle] && (settings.mapStyle !== 'tomtom' || settings.tomtom)) ? settings.mapStyle : 'vec';
   const Map_ = {
     map: null, tiles: null, layers: null, poiLayer: null, me: null, full: false, lastFit: '',
     place() {                       // Karte in den passenden Platz hängen (Handy: im Ergebnis, breit: rechts, Vollbild: direkt in die Seite)
@@ -350,12 +382,11 @@
     },
     setTiles() {
       if (!this.map) return;
-      if (this.tiles) this.tiles.remove();
       const st = MAP_STYLES[mapStyle()], dark = mapDark();
       $('#map').classList.toggle('map-dark', dark && !!st.filter);
       // Standard-OSM wird im Dunkelmodus per CSS-Filter abgedunkelt, die anderen Stile haben eigene dunkle Kacheln
       $('#map').classList.toggle('no-filter', !st.filter);
-      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, maxNativeZoom: !navigator.onLine && settings.region && settings.region.z && settings.region.style === mapStyle() ? settings.region.z : 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(this.map);
+      attachBase(this, this.map, st, dark);
     },
     cycleStyle() {
       const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
@@ -584,7 +615,7 @@
   };
 
   /* ---------- Kartenstil und Standort-Symbol selbst wählen ---------- */
-  const STYLE_INFO = { de: 'deutsche Beschriftung, gut lesbar', hot: 'ruhig, Häuser und Wege deutlich', osm: 'die klassische OpenStreetMap', sat: 'Luftbild – Einfahrten und Höfe erkennen', tomtom: 'mit deinem TomTom-Schlüssel' };
+  const STYLE_INFO = { vec: 'Straßennamen, Hausnummern und Gebäude – auch offline', de: 'deutsche Beschriftung, gut lesbar', hot: 'ruhig, Häuser und Wege deutlich', osm: 'die klassische OpenStreetMap', sat: 'Luftbild – Einfahrten und Höfe erkennen', tomtom: 'mit deinem TomTom-Schlüssel' };
   function openLayerSheet() {
     const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
     openSheet('Karte', `<div class="menu">${keys.map(k => `<button class="menu-item${mapStyle() === k ? ' now' : ''}" data-style="${k}">${ICON.route}<span><b>${MAP_STYLES[k].name}</b><small>${STYLE_INFO[k]}</small></span>${mapStyle() === k ? ICON.check : ''}</button>`).join('')}</div>
@@ -1819,18 +1850,41 @@
     }
     return out;
   }
-  // Fair gegenüber den freien Kartendiensten: höchstens 900 Kacheln ab Zoomstufe 13 (Nutzungsregeln von OpenStreetMap)
-  function tilePlan(lat, lon, rM) {
-    let list = tilesFor(lat, lon, rM, 10).concat(tilesFor(lat, lon, rM, 11), tilesFor(lat, lon, rM, 12)), maxZ = 12, big = 0;
-    for (let z = 13; z <= 16; z++) {
-      const t = tilesFor(lat, lon, rM, z);
-      if (big + t.length > 900) break;
-      big += t.length; list = list.concat(t); maxZ = z;
-    }
-    return { list, maxZ };
+  /* Offline-Karte: Vektorkacheln von OpenFreeMap (Zoom 0–14, höhere Stufen werden daraus gezoomt). Erlaubt bis 3000 Kacheln je Download, 4 gleichzeitig. */
+  function vecPlan(lat, lon, rM) {
+    let list = [];
+    for (let z = 0; z <= 14; z++) list = list.concat(tilesFor(lat, lon, rM, z));
+    return list;
   }
-  const OFFLINE_STYLES = ['de', 'hot', 'osm', 'sat'];
-  const tileUrl = (st, [z, x, y]) => MAP_STYLES[st].url.replace('{s}', 'a').replace('{r}', '').replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  async function vecDownload(lat, lon, rM, onProgress) {
+    if (!window.caches) throw new Error('kein Speicher');
+    const cache = await caches.open('tourplan-offline');
+    const put = async url => { const r = await fetch(url); if (r.ok) { await cache.put(url, r.clone()); return r; } if (r.status === 404 || r.status === 204) return null; throw new Error(String(r.status)); };
+    const tj = await (await put(`${OFM}/planet`)).json();
+    const fonts = new Set(), sprites = new Set();
+    for (const st of ['liberty', 'dark']) {
+      const r = await put(`${OFM}/styles/${st}`); const d = await r.json();
+      d.layers.forEach(l => { const f = (l.layout || {})['text-font']; if (Array.isArray(f)) fonts.add(f.filter(x => typeof x === 'string').join(',')); });
+      if (d.sprite) sprites.add(d.sprite);
+    }
+    fonts.add('Noto Sans Bold');
+    const extra = [];
+    sprites.forEach(sp => ['.json', '.png', '@2x.json', '@2x.png'].forEach(x => extra.push(sp + x)));
+    fonts.forEach(f => ['0-255', '256-511'].forEach(r => extra.push(encodeURI(`${OFM}/fonts/${f}/${r}.pbf`))));
+    const list = vecPlan(lat, lon, rM), total = list.length + extra.length;
+    let done = 0, fail = 0, i = 0, j = 0;
+    const tick = () => { done++; onProgress(done, total, fail); };
+    const work = async () => {
+      while (j < extra.length) { const u = extra[j++]; try { await put(u); } catch (_) { fail++; } tick(); }
+      while (i < list.length) {
+        const [z, x, y] = list[i++];
+        try { await put(tj.tiles[0].replace('{z}', z).replace('{x}', x).replace('{y}', y)); } catch (_) { fail++; }
+        tick();
+      }
+    };
+    await Promise.all([work(), work(), work(), work()]);
+    return { total, fail, tiles: list.length };
+  }
 
   const Region = {
     map: null, circle: null, pin: null, center: null, r: 8,
@@ -1845,9 +1899,8 @@
         this.map = L.map($('#region-map'), { zoomControl: false, zoomSnap: .25 });
         this.map.on('click', e => this.setCenter(e.latlng, true));
       }
-      if (this.tiles) this.tiles.remove();
       const st = MAP_STYLES[mapStyle()];
-      this.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(mapDark()) : st.url, { maxZoom: 19, subdomains: 'abc', attribution: st.attr }).addTo(this.map);
+      attachBase(this, this.map, st, mapDark());
       $('#region-map').classList.toggle('no-filter', !st.filter); $('#region-map').classList.toggle('map-dark', mapDark() && !!st.filter);
       setTimeout(() => { this.map.invalidateSize(); this.map.setView(this.center, this.zoomFor()); this.setCenter(this.center); this.fit(); }, 30);
       $('#rg-status').textContent = ''; $('#rg-progress').hidden = true; $('#rg-save').disabled = false;
@@ -1907,10 +1960,9 @@
       $('#rg-places').innerHTML = covered
         ? (pl.length ? `<details class="rg-det"><summary>${pl.length} Orte im Kreis <small>antippen: einzelne abwählen</small></summary><div class="area-chips">${pl.map(p => `<button type="button" data-place="${esc(p.name)}" aria-pressed="${!settings.area || sel.has(p.name) || !settings.region ? 'true' : 'false'}">${esc(p.name)}<small>${p.count} Str.</small></button>`).join('')}</div></details>` : '<small>Keine Orte im Kreis.</small>')
         : '<small>Die Orte in diesem Kreis werden beim Speichern geladen.</small>';
-      const ok = OFFLINE_STYLES.includes(mapStyle());
-      const plan = tilePlan(c.lat, c.lng, rM);
-      $('#rg-tiles').disabled = !ok;
-      $('#rg-tiles-info').textContent = ok ? `${plan.list.length} Kartenteile, ca. ${Math.max(1, Math.round(plan.list.length * 18 / 1024))} MB · Details bis Zoomstufe ${plan.maxZ}${plan.maxZ < 15 ? ' (kleinerer Kreis = mehr Details)' : ''}` : 'Für den TomTom-Stil nicht möglich – anderen Kartenstil wählen';
+      const n = vecPlan(c.lat, c.lng, rM).length;
+      $('#rg-tiles').disabled = false;
+      $('#rg-tiles-info').textContent = `${n} Kartenteile, ca. ${Math.max(7, Math.round(n * 22 / 1024 + 6))} MB · Straßennamen, Hausnummern und Gebäude`;
     },
     async save() {
       const c = this.center, rM = this.r * 1000;
@@ -1920,7 +1972,7 @@
       persist();
       $('#rg-save').disabled = true; $('#rg-progress').hidden = false;
       const bar = f => { $('#rg-bar').style.width = Math.round(f * 100) + '%'; };
-      let idxDone = false, tDone = 0, tAll = 0, tFail = 0;
+      let idxDone = false, tDone = 0, tAll = 0, tFail = 0, tErr = '';
       const show = () => {
         bar(Math.max(.05, (idxDone ? .35 : .1) + (tAll ? .65 * tDone / tAll : (idxDone ? .65 : 0))));
         $('#rg-status').textContent = (tAll && tDone < tAll ? `Karte wird gespeichert … ${tDone} von ${tAll}` : tAll ? 'Karte gespeichert' : '') + (idxDone ? '' : (tAll ? ' · ' : '') + 'Straßen und Hausnummern werden geladen … (bis zu 2 Minuten)');
@@ -1928,21 +1980,13 @@
       show();
       // Karte und Straßenverzeichnis gleichzeitig laden – spart Wartezeit
       const tilesJob = (async () => {
-        if (!$('#rg-tiles').checked || !OFFLINE_STYLES.includes(mapStyle()) || !window.caches) return;
-        const plan = tilePlan(c.lat, c.lng, rM), st = mapStyle();
-        tAll = plan.list.length;
+        if (!$('#rg-tiles').checked) return;
         try { await caches.delete('tourplan-offline'); } catch (_) {}
-        const cache = await caches.open('tourplan-offline');
-        let i = 0;
-        const worker = async () => {
-          while (i < plan.list.length) {
-            const url = tileUrl(st, plan.list[i++]);
-            try { const r = await fetch(url, { mode: 'no-cors' }); await cache.put(url, r); } catch (_) { tFail++; }
-            tDone++; show();
-          }
-        };
-        await Promise.all([worker(), worker(), worker(), worker()]);
-        if (tFail < tAll / 2) { settings.region.z = plan.maxZ; settings.region.style = st; persist(); }
+        try {
+          const r = await vecDownload(c.lat, c.lng, rM, (d, t, f) => { tDone = d; tAll = t; tFail = f; show(); });
+          tAll = r.total; tFail = r.fail;
+          if (r.fail < r.total / 4) { settings.region.vec = Date.now(); persist(); } else tErr = 'viele Kartenteile fehlen';
+        } catch (e) { tErr = e.message || 'Fehler'; tFail = tAll = tAll || 1; }
       })();
       await loadIndex(true); idxDone = true; show();
       // Gebiet = gewählte Orte, sonst alle Orte im Kreis
@@ -1955,8 +1999,8 @@
       const a = Geo.addrCount(), sc = Geo.streetCount();
       const failed = indexState === 'error' || indexState === 'addr-error';
       $('#rg-status').textContent =
-        tFail && tFail >= tAll / 2 ? 'Die Karte konnte nicht gespeichert werden (keine Verbindung zum Kartendienst). Bitte mit WLAN noch einmal versuchen.' : failed ? `Der Kartendienst für Straßen ist gerade überlastet – bisherige Daten bleiben (${sc ? sc.streets : 0} Straßen). Später in den Einstellungen „Aktualisieren“ tippen.${settings.region.z ? ' Karte ist gespeichert.' : ''}`
-        : `Fertig: ${sc ? sc.streets : 0} Straßen, ${a ? a.n.toLocaleString('de-DE') : 0} Hausnummern${settings.region.z ? ', Karte bis Zoomstufe ' + settings.region.z : ''} gespeichert.`;
+        tErr ? `Die Karte konnte nicht vollständig gespeichert werden (${tErr}). Bitte mit gutem Netz noch einmal versuchen.` : failed ? `Der Kartendienst für Straßen ist gerade überlastet – bisherige Daten bleiben (${sc ? sc.streets : 0} Straßen). Später in den Einstellungen „Aktualisieren“ tippen.${settings.region.z ? ' Karte ist gespeichert.' : ''}`
+        : `Fertig: ${sc ? sc.streets : 0} Straßen, ${a ? a.n.toLocaleString('de-DE') : 0} Hausnummern${settings.region.vec ? ', Karte offline' : ''} gespeichert.`;
       $('#rg-save').disabled = false;
       toast(failed ? 'Gebiet gespeichert – Straßen später aktualisieren' : 'Gebiet gespeichert');
       setTimeout(() => this.close(), failed ? 5000 : 1600);
@@ -2143,5 +2187,5 @@
   if (!settings.onboarded || !settings.depot) startOnboarding(); else startApp();
   setTimeout(() => { const sp = $('#splash'); if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 450); } }, 700);
 
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
