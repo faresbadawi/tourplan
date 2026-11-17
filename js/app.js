@@ -366,6 +366,7 @@
       const hasStops = stops.some(s => s.status === 'ok');
       $('#map-empty').hidden = hasStops || !!route;
       const m = this.ensure(); if (!m || !depot) return;
+      this.rendering = true; this.reopen = null;
       this.layers.clearLayers();
       const bounds = [[depot.lat, depot.lon]];
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
@@ -378,7 +379,14 @@
           const s = stopById(id); if (!s) return;
           const cls = route.done[id] ? 'done' : (i === cur ? 'current' : '');
           const pk = s.pk || 1;
-          const mk = this.pin(s, i + 1, cls).bindPopup(`<div class="pin-pop"><div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span></div><div class="pp-adr"><b>Stopp ${i + 1}</b>${esc(s.label.split(',')[0])}</div><button type="button" data-pin-focus="${id}">In der Liste zeigen</button></div>`, { closeButton: false, offset: [0, -12], className: 'pin-popup', autoPanPadding: [30, 90] }).addTo(this.layers);
+          const parts = s.label.split(','), street = parts[0], town = parts.slice(1, 3).join(',').replace(/\b\d{5}\b\s*/, '').trim();
+          const mk = this.pin(s, i + 1, cls).bindPopup(`<div class="pin-pop">
+            <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
+            <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span></div>
+            <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
+            { closeButton: false, offset: [0, -20], className: 'pin-popup', autoPanPadding: [24, 120], maxWidth: 240, minWidth: 220 })
+            .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
+          if (this.popId === id) this.reopen = mk;
           this.pinEls[id] = mk.getElement() && mk.getElement().firstElementChild;
           if (cls === 'current') mk.setZIndexOffset(1000);
           bounds.push([s.lat, s.lon]);
@@ -393,6 +401,8 @@
       }
       this.pin(depot, HOME_ICON, 'depot').bindTooltip(esc(depot.name)).addTo(this.layers);
       this.renderPois();
+      if (this.reopen) this.reopen.openPopup();
+      this.rendering = false;
       // nur neu einpassen, wenn sich die Punkte geändert haben – nicht bei jedem Haken
       const key = (route ? route.order.join() : stops.filter(s => s.status === 'ok').map(s => s.id).join()) + '|' + depot.lat + '|' + this.zoomOn();
       $('#map-zoom').classList.toggle('on', this.zoomOn()); $('#map-zoom').hidden = !route;
@@ -477,7 +487,10 @@
     },
   };
   const MAIL_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3.5 7.5 12 13l8.5-5.5"/></svg>';
-  $('#map').addEventListener('click', e => { const b = e.target.closest('[data-pin-focus]'); if (b) { Map_.map.closePopup(); focusRouteItem(b.dataset.pinFocus); } });
+  $('#map').addEventListener('click', e => {
+    const f = e.target.closest('[data-pin-focus]'); if (f) { Map_.map.closePopup(); focusRouteItem(f.dataset.pinFocus); return; }
+    const d = e.target.closest('[data-pin-done]'); if (d) { Map_.map.closePopup(); toggleDone(d.dataset.pinDone); }
+  });
   $('#map-tap').onclick = () => Map_.setFull(true);
   $('#map-full').onclick = () => Map_.setFull(true);
   $('#map-close').onclick = () => Map_.setFull(false);
@@ -733,7 +746,7 @@
     renderStops();
     if (jumpAfter) { jumpAfter = false; problemIdx = 0; const l = route ? stops.filter(x => !route.order.includes(x.id)) : stops; if (problemsOf(l).length) setTimeout(jumpToProblem, 250); }
     // läuft schon eine Tour, kommen neue Adressen automatisch an die beste Stelle
-    if (route && stops.some(s => s.status === 'ok' && !route.order.includes(s.id))) plan(true);
+    if (route && stops.some(s => s.status === 'ok' && !route.order.includes(s.id))) plan('insert');
   }
 
   const ICON = {
@@ -849,7 +862,7 @@
     const pkn = pkCount(list);
     $('#stop-pk').textContent = list.length ? `· ${pkn} Paket${pkn === 1 ? '' : 'e'}` : '';
     $('#stops-card h2').firstChild.textContent = route ? 'Noch offen ' : 'Stopps ';
-    $('#stop-list').innerHTML = list.map(s => {
+    $('#stop-list').innerHTML = list.map((s, idx) => {
       const cls = s.status === 'ok' ? 'ok' : s.status;
       const state = s.status === 'ok' ? ICON.ok : s.status === 'err' ? ICON.warn : '';
       const sub = s.status === 'ok' ? esc(s.label) + (s.approx ? ' · Hausnr. ungefähr' : '') + (s.outside ? ` <span class="tag-out">außerhalb</span>` : '') + (s.fixedFrom ? `<br><span class="fixed-note">korrigiert aus „${esc(s.fixedFrom)}“</span>` : '')
@@ -859,7 +872,7 @@
       return `<li class="stop swipe ${cls}${newCls(s.id)}" data-id="${s.id}">
         <div class="swipe-bg"><span></span><span class="r">${ICON.del} Löschen</span></div>
         <div class="row-main">
-          <span class="state">${state}</span>
+          ${route ? '' : `<span class="n">${idx + 1}</span>`}<span class="state">${state}</span>
           <div class="txt"><div class="q">${esc(s.query)}</div><div class="r">${sub}</div></div>
           ${pkPill(s)}
           <div class="acts"><button data-act="edit" aria-label="Bearbeiten">${ICON.edit}</button><button data-act="del" aria-label="Löschen">${ICON.del}</button></div>
@@ -1210,7 +1223,27 @@
       const doneStops = inPrev.filter(s => prev.done[s.id]);
       let rest = inPrev.filter(s => !prev.done[s.id]).concat(ok.filter(s => !inPrev.includes(s)));
       let saving = prev ? prev.saving : 0, source = 'osrm';
-      if (reopt && rest.length > 1) {
+      const fresh = prev ? ok.filter(s => !inPrev.includes(s)) : [];
+      if (reopt === 'insert' && fresh.length && rest.length > fresh.length) {
+        // Neue Adressen an der günstigsten Stelle einfügen – die übrige Reihenfolge bleibt genau so, wie sie war
+        const base = rest.slice(0, rest.length - fresh.length);
+        const start = doneStops.length ? doneStops[doneStops.length - 1] : depot;
+        const nodes = [start, ...base, ...fresh], dIdx = nodes.length;
+        const M = await Geo.matrix([...nodes, depot]);
+        source = M.source;
+        const d = (a, b) => M.dur[a][b];
+        const seq = base.map((_, i) => i + 1);
+        fresh.forEach((_, k) => {
+          const f = base.length + 1 + k; let bestP = seq.length, bestC = Infinity;
+          for (let q = 0; q <= seq.length; q++) {
+            const a = q === 0 ? 0 : seq[q - 1], nx = q === seq.length ? (settings.roundtrip ? dIdx : -1) : seq[q];
+            const c = d(a, f) + (nx === -1 ? 0 : d(f, nx) - d(a, nx));
+            if (c < bestC - 1e-6) { bestC = c; bestP = q; }
+          }
+          seq.splice(bestP, 0, f);
+        });
+        rest = seq.map(i => nodes[i]);
+      } else if (reopt && rest.length > 1) {
         let start = doneStops.length ? doneStops[doneStops.length - 1] : depot, fromMe = false;
         if (!first) {                                        // laufende Tour: ab dem Punkt, an dem du gerade bist
           const me = await whereAmI();
@@ -1224,7 +1257,7 @@
         const D = Array.from({ length: n + 1 }, (_, i) => M.dur[i].slice(0, n + 1));
         if (backIdx) for (let i = 1; i <= n; i++) D[i][0] = M.dur[i][backIdx];
         const naive = Optimize.tourCost(rest.map((_, i) => i + 1), D, settings.roundtrip);
-        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 5000 : n > 80 ? 3000 : 1500);
+        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 6000 : n > 80 ? 4000 : 2500);
         rest = order.map(i => rest[i - 1]);
         source = M.source;
         if (first) saving = Math.max(0, naive - cost);
@@ -1259,6 +1292,11 @@
     const db = $('#dock-opt'); if (db) { db.classList.toggle('loading', on); db.disabled = on; }
   }
   $('#optimize-btn').onclick = () => plan(true);
+  $('#top-depot').onclick = () => {                       // Direkt zum Depot navigieren
+    const d = settings.depot; if (!d) return;
+    toast(`Navigation zum Depot (${NAV[settings.nav].name})`, 1800);
+    window.open(navUrl(d), '_blank', 'noopener');
+  };
 
   /* ---------- Ergebnis ---------- */
   const currentIndex = () => route ? route.order.findIndex(id => !route.done[id]) : -1;

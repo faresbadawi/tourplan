@@ -677,6 +677,11 @@
     const n = points.length;
     const dur = Array.from({ length: n }, () => new Array(n).fill(null)), dist = Array.from({ length: n }, () => new Array(n).fill(null));
     const table = async idx => {                       // volle Tabelle für eine Teilmenge der Punkte
+      for (let attempt = 0; ; attempt++) {              // bis zu 3 Versuche – der kostenlose Dienst ist manchmal kurz überlastet, Luftlinie würde die Reihenfolge verändern
+        try { return await tableOnce(idx); } catch (e) { if (attempt >= 2) throw e; await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); }
+      }
+    };
+    const tableOnce = async idx => {
       const r = await fetch(`${OSRM}/table/v1/driving/${coordStr(idx.map(i => points[i]))}?annotations=duration,distance`, { signal: AbortSignal.timeout(15000) });
       const j = await r.json();
       if (j.code !== 'Ok') throw new Error(j.code);
@@ -706,9 +711,15 @@
     try {
       for (let s = 0; s < points.length - 1; s += CH - 1) {
         const part = points.slice(s, s + CH);
-        const r = await fetch(`${OSRM}/route/v1/driving/${coordStr(part)}?overview=full&geometries=geojson&steps=false`, { signal: AbortSignal.timeout(12000) });
-        const j = await r.json();
-        if (j.code !== 'Ok') throw new Error(j.code);
+        let j = null;
+        for (let attempt = 0; attempt < 3 && !j; attempt++) {
+          try {
+            const r = await fetch(`${OSRM}/route/v1/driving/${coordStr(part)}?overview=full&geometries=geojson&steps=false`, { signal: AbortSignal.timeout(15000) });
+            const jj = await r.json(); if (jj.code === 'Ok') j = jj;
+          } catch (_) {}
+          if (!j && attempt < 2) await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        }
+        if (!j) throw new Error('route');
         j.routes[0].legs.forEach(l => legs.push({ dur: l.duration, dist: l.distance }));
         j.routes[0].geometry.coordinates.forEach(([lon, lat]) => geometry.push([lat, lon]));
       }

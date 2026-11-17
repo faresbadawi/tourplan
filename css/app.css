@@ -1076,3 +1076,26 @@ html, body { max-width: 100%; overflow-x: hidden; }
 /* Vier Navi-Apps: zwei pro Reihe */
 .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice { min-width: 0; overflow-wrap: anywhere; }
+
+/* ============ Version 11: Depot-Knopf, nummerierte Eingabeliste, ruhigere Vorschau am Punkt ============ */
+#top-depot svg { fill: none; }
+.stop .n { flex: none; width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font: 800 13px/1 var(--sans); background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums; }
+.stop.err .n { background: color-mix(in srgb, var(--warn) 28%, var(--surface)); color: var(--text); }
+.stop .row-main { gap: 10px; }
+
+.pin-popup .leaflet-popup-content-wrapper { border-radius: 22px; padding: 0; background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border), 0 14px 36px rgba(0,0,0,.4); }
+.pin-popup .leaflet-popup-content { margin: 0; width: 220px !important; }
+.pin-popup .leaflet-popup-tip { background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
+.pin-pop { display: grid; gap: 12px; padding: 14px; font-family: var(--sans); }
+.pp-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pp-n { flex: none; width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; font: 800 16px/1 var(--sans); background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); }
+.pp-adr { min-width: 0; display: grid; gap: 1px; }
+.pp-adr b { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; line-height: 1.2; text-transform: none; letter-spacing: 0; color: var(--text); display: block; }
+.pp-adr small { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.pp-pk { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 12px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); }
+.pp-pk svg { width: 30px; height: 30px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round; }
+.pp-pk b { font-size: 34px; line-height: 1; font-weight: 800; color: var(--text); }
+.pp-pk span { font-size: 15px; font-weight: 700; color: var(--muted); }
+.pp-act { display: flex; gap: 8px; }
+.pp-act button { flex: 1; min-width: 0; border: 0; border-radius: 12px; padding: 10px 8px; font: 700 14px var(--sans); background: var(--surface-2); color: var(--text); }
+.pp-act button.ok { background: var(--accent); color: var(--accent-ink); }

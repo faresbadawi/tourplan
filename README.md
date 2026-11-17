@@ -95,3 +95,10 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Karte hell oder dunkel unabhängig vom App-Design wählbar (Ebenen-Knopf auf der Karte)
 - Stopp-Punkt auf der Karte antippen zeigt groß die Paketzahl mit Paket-Symbol
 - Feinerer Fortschrittsring oben
+
+## Version 11
+
+- Depot-Knopf oben neben dem Mikrofon: navigiert direkt zum Depot (mit der gewählten Navi-App)
+- Stabile Route: neue Adressen werden an der günstigsten Stelle eingefügt, ohne die übrige Reihenfolge zu ändern; nur „Route optimieren“ sortiert neu. Routendienst-Anfragen werden bis zu dreimal versucht, damit nicht versehentlich mit Luftlinie (anderer Reihenfolge) gerechnet wird
+- Eingabeliste ist nummeriert
+- Vorschau am Punkt überarbeitet: Nummer, Straße, Ort, große Paketzahl, „Erledigt“ und „In Liste“; bleibt beim Neuzeichnen der Karte offen
