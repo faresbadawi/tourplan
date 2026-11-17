@@ -1566,7 +1566,7 @@
       rows.push(`<li data-id="${s.id}" class="swipe${done ? ' done' : ''}${i === cur ? ' current' : ''}${openId === s.id ? ' open' : ''}${justDone === s.id ? ' just-done' : ''}${newCls(s.id)}">
         <div class="swipe-bg"><span class="l">${ICON.check} ${done ? 'Wieder offen' : 'Erledigt'}</span><span class="r">${ICON.del} Löschen</span></div>
         <div class="row-main">
-          <span class="num">${i + 1}</span>
+          <span class="num">${i + 1}</span>${zoneChip(s.id)}
           <div class="txt"><div class="q"><span>${esc(l1)}</span></div><div class="meta">${esc(meta)}</div></div>
           ${pkPill(s)}
           <button class="check" data-done="${s.id}" aria-pressed="${done}" aria-label="Erledigt">${ICON.check}</button>
@@ -1609,6 +1609,118 @@
     openId = id; renderResult();
     setTimeout(() => { const li = document.querySelector(`#route-list li[data-id="${id}"]`); if (li) li.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 120);
   }
+
+
+  /* ---------- Laderaum (Probefunktion): Fahrzeug wählen, Laderaum in Bereiche teilen, Pakete nach Straßen zuordnen ---------- */
+  // Richtwerte aus Herstellerangaben und Presseberichten (Innenmaße ungefähr, bitte bei Bedarf unter „Eigene Maße“ anpassen)
+  const VEHICLES = {
+    etransit: { name: 'Ford E-Transit', info: 'Paketzustellung, Hochdach · ca. 18 m³', l: 4.8, w: 1.78 },
+    ecustom:  { name: 'Ford E-Transit Custom', info: 'kleiner Transporter · ca. 6,7 m³', l: 2.9, w: 1.65 },
+    workxl:   { name: 'StreetScooter Work XL', info: 'auf Ford-Transit-Basis · ca. 20 m³', l: 4.8, w: 2.0 },
+    workl:    { name: 'StreetScooter Work L', info: 'ca. 8 m³', l: 3.3, w: 1.75 },
+    work:     { name: 'StreetScooter Work', info: 'ca. 4,3 m³', l: 2.4, w: 1.6 },
+    sprinter: { name: 'Mercedes Sprinter', info: 'Kastenwagen mittel · ca. 10,5 m³', l: 3.3, w: 1.78 },
+    vito:     { name: 'Mercedes Vito / VW Transporter', info: 'ca. 6 m³', l: 2.7, w: 1.69 },
+    custom:   { name: 'Eigene Maße', info: 'Länge und Breite selbst eingeben', l: 3, w: 1.7 },
+  };
+  const ZONE_COLORS = ['#3B82F6', '#22A06B', '#E8890C', '#9B5DE5'];
+  const ZONE_LETTERS = ['A', 'B', 'C', 'D'];
+  const vehicleOf = () => {
+    const k = VEHICLES[settings.vehicle] ? settings.vehicle : null; if (!k) return null;
+    const v = Object.assign({ id: k }, VEHICLES[k]);
+    if (k === 'custom' && settings.vehCustom) Object.assign(v, { l: +settings.vehCustom.l || v.l, w: +settings.vehCustom.w || v.w });
+    return v;
+  };
+  const streetOf = s => s.label.split(',')[0].replace(/\s+\d+\s?[a-zA-Z]?(\s*[-–/]\s*\d+\s?[a-zA-Z]?)?$/, '').trim();
+  /** Stopps (offene, in Fahrtreihenfolge) in n zusammenhängende Bereiche mit ungefähr gleich vielen Paketen teilen */
+  function loadZones(n) {
+    const seq = (route ? route.order.filter(id => !route.done[id]) : stops.filter(s => s.status === 'ok').map(s => s.id)).map(stopById).filter(Boolean);
+    const total = seq.reduce((a, s) => a + (s.pk || 1), 0);
+    const zones = Array.from({ length: n }, () => ({ stops: [], pk: 0 }));
+    let cum = 0;
+    seq.forEach(s => {
+      const w = s.pk || 1; const z = Math.min(n - 1, Math.floor(((cum + w / 2) / Math.max(1, total)) * n));
+      zones[z].stops.push(s); zones[z].pk += w; cum += w;
+    });
+    const zoneOf = {}; zones.forEach((z, i) => z.stops.forEach(s => { zoneOf[s.id] = i; }));
+    const numOf = {}; if (route) route.order.forEach((id, i) => { numOf[id] = i + 1; }); else seq.forEach((s, i) => { numOf[s.id] = i + 1; });
+    zones.forEach(z => {
+      z.streets = [...new Set(z.stops.map(streetOf))];
+      z.from = z.stops.length ? numOf[z.stops[0].id] : null; z.to = z.stops.length ? numOf[z.stops[z.stops.length - 1].id] : null;
+    });
+    return { zones, total, count: seq.length, zoneOf };
+  }
+  const zoneChip = id => {
+    if (!settings.vehicle || settings.zonesInList === false || !route) return '';
+    const z = loadZones(settings.zoneN || 3).zoneOf[id]; if (z == null) return '';
+    return `<span class="zc" style="--zc:${ZONE_COLORS[z]}" title="Ladebereich ${ZONE_LETTERS[z]}">${ZONE_LETTERS[z]}</span>`;
+  };
+  const fmtM = x => (Math.round(x * 100) / 100).toLocaleString('de-DE');
+  function cargoSvg(v, L) {
+    const k = Math.min(250 / v.w, 330 / v.l), W = v.w * k, H = v.l * k, cabH = .9 * k, padX = 44, top = 16;
+    const cargoY = top + cabH + 8, svgW = W + padX * 2, svgH = cargoY + H + 40;
+    const n = L.zones.length, tot = Math.max(1, L.total);
+    const raw = L.zones.map(z => .3 / n + .7 * (z.pk / tot)), sum = raw.reduce((a, b) => a + b, 0);
+    let y = cargoY; const parts = [];
+    L.zones.forEach((z, i) => {
+      const h = H * raw[i] / sum, c = ZONE_COLORS[i];
+      parts.push(`<rect x="${padX}" y="${y.toFixed(1)}" width="${W.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".82"/>`);
+      if (i > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5"/>`);
+      const cy = y + h / 2, big = h > 62;
+      parts.push(`<text x="${padX + W / 2}" y="${(cy - (big ? 8 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="26" font-weight="800" fill="#fff">${ZONE_LETTERS[i]}</text>`);
+      if (big) parts.push(`<text x="${padX + W / 2}" y="${(cy + 16).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">${z.pk} Paket${z.pk === 1 ? '' : 'e'}</text>`);
+      y += h;
+    });
+    const archY = cargoY + H * .62, arch = .2 * k;
+    return `<svg viewBox="0 0 ${svgW.toFixed(0)} ${svgH.toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
+      <rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${cabH.toFixed(1)}" rx="16" fill="var(--surface-2)" stroke="var(--border)" stroke-width="2"/>
+      <rect x="${padX + 12}" y="${top + 8}" width="${(W - 24).toFixed(1)}" height="9" rx="4" fill="var(--border)"/>
+      <rect x="${padX + W * .18}" y="${top + cabH * .42}" width="${W * .26}" height="${cabH * .42}" rx="7" fill="var(--border)"/><rect x="${padX + W * .56}" y="${top + cabH * .42}" width="${W * .26}" height="${cabH * .42}" rx="7" fill="var(--border)"/>
+      <text x="${padX + W / 2}" y="${top + cabH - 2}" text-anchor="middle" font-size="10" fill="var(--muted)" font-weight="700">FAHRERKABINE</text>
+      <clipPath id="ldclip"><rect x="${padX}" y="${cargoY}" width="${W.toFixed(1)}" height="${H.toFixed(1)}" rx="10"/></clipPath>
+      <g clip-path="url(#ldclip)">${parts.join('')}
+        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="${(.55 * k).toFixed(1)}" fill="#000" fill-opacity=".38"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="${(.55 * k).toFixed(1)}" fill="#000" fill-opacity=".38"/></g>
+      <rect x="${padX}" y="${cargoY}" width="${W.toFixed(1)}" height="${H.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3"/>
+      <line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(cargoY + 8).toFixed(1)}" y2="${(cargoY + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text transform="translate(${padX + W + 20},${(cargoY + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>
+      <line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(cargoY + H + 6).toFixed(1)}" y2="${(cargoY + H + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
+      <text x="${padX + W / 2}" y="${(cargoY + H + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>
+      <text transform="translate(${padX - 14},${(cargoY + H / 2).toFixed(1)}) rotate(-90)" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">ca. ${fmtM(v.l)} m</text>
+      <text x="${padX + W / 2}" y="${(cargoY + H + 36).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">ca. ${fmtM(v.w)} m breit</text></svg>`;
+  }
+  function openLoadSheet() {
+    if (!settings.vehicle) { settings.vehicle = 'etransit'; persist(); }
+    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n);
+    const opts = Object.entries(VEHICLES).map(([k, x]) => `<option value="${k}" ${k === v.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+    const empty = !L.count;
+    const list = L.zones.map((z, i) => `<li class="zrow"><span class="zc big" style="--zc:${ZONE_COLORS[i]}">${ZONE_LETTERS[i]}</span>
+      <div class="zt"><b>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</b>
+      <small>${z.streets.length ? esc(z.streets.slice(0, 5).join(', ')) + (z.streets.length > 5 ? ` und ${z.streets.length - 5} weitere` : '') : 'leer'}</small></div></li>`).join('');
+    const order = L.zones.map((_, i) => ZONE_LETTERS[i]).reverse().join(' → ');
+    openSheet('Laderaum', `<div class="ld">
+      <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche und sagt, welche Stopps (Straßen) wohin gehören.</p>
+      <label class="field"><span>Fahrzeug</span><select id="ld-veh">${opts}</select></label>
+      <p class="ld-info">${esc(v.info)} · Richtwerte, bitte prüfen</p>
+      ${v.id === 'custom' ? `<div class="ld-custom"><label class="field"><span>Länge (m)</span><input id="ld-l" type="number" step="0.1" min="1" max="8" inputmode="decimal" value="${fmtM(v.l).replace(',', '.')}"></label><label class="field"><span>Breite (m)</span><input id="ld-w" type="number" step="0.05" min="1" max="2.5" inputmode="decimal" value="${fmtM(v.w).replace(',', '.')}"></label></div>` : ''}
+      <div class="segmented ld-n" id="ld-n">${[2, 3, 4].map(k => `<button type="button" data-zn="${k}" aria-pressed="${k === n}">${k} Bereiche</button>`).join('')}</div>
+      ${empty ? '<p class="ld-empty">Noch keine Stopps. Füge Adressen hinzu und optimiere die Route – dann erscheint hier die Aufteilung.</p>' : `
+      <div class="ld-draw">${cargoSvg(v, L)}</div>
+      <ol class="ld-list">${list}</ol>
+      <div class="ld-tip"><b>So laden:</b> von hinten nach vorn – ${esc(order)}. Bereich A kommt zuletzt, vorne an die Schiebetür, denn dort liegen die ersten Stopps.</div>
+      ${route ? '' : '<p class="ld-empty">Noch ohne Optimierung – die Reihenfolge entspricht deiner Liste.</p>'}
+      <label class="switch"><input type="checkbox" id="ld-chips" ${settings.zonesInList === false ? '' : 'checked'}><span class="track"><span class="thumb"></span></span><span>Bereich (A, B, C …) in der Route anzeigen</span></label>`}
+    </div>`);
+  }
+  $('#top-load').onclick = openLoadSheet;
+  $('#sheet-body').addEventListener('change', e => {
+    if (e.target.id === 'ld-veh') { settings.vehicle = e.target.value; persist(); openLoadSheet(); if (route) renderResult(); }
+    else if (e.target.id === 'ld-l' || e.target.id === 'ld-w') { settings.vehCustom = { l: +$('#ld-l').value || 3, w: +$('#ld-w').value || 1.7 }; persist(); openLoadSheet(); }
+    else if (e.target.id === 'ld-chips') { settings.zonesInList = e.target.checked; persist(); if (route) renderResult(); }
+  });
+  $('#sheet-body').addEventListener('click', e => {
+    const z = e.target.closest('[data-zn]'); if (!z) return;
+    settings.zoneN = +z.dataset.zn; persist(); openLoadSheet(); if (route) renderResult();
+  });
 
   /* ---------- Blatt: Menü, Google-Abschnitte, Paketstellen ---------- */
   function openSheet(title, html) {

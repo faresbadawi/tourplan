@@ -123,3 +123,10 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Straßennamen früher (ab Zoomstufe 13,5), größer und fett, dunkel auf hell; Hausnummern größer
 - Eigener Dunkelmodus der Karte aus dem hellen Stil abgeleitet: helle Straßen, hellgraue Gebäude, weiße Schrift und Hausnummern, kräftigere Gewässer und Grünflächen
 - Auf den Stopp zoomen ist jetzt näher (Stufe 17): „Stopp“-Knopf, nächster Stopp, Standort folgen
+
+## Version 16 (Probefunktion)
+
+- Laderaum-Knopf oben neben dem Mikrofon: Fahrzeug wählen (Ford E-Transit, E-Transit Custom, StreetScooter Work/Work L/Work XL, Mercedes Sprinter, Vito/VW Transporter oder eigene Maße)
+- Zeichnet den Laderaum von oben (Fahrerkabine, Schiebetür, Hecktüren, Radkästen) und teilt ihn in 2, 3 oder 4 Bereiche mit ungefähr gleich vielen Paketen
+- Jeder Bereich zeigt Paketzahl, Stopp-Nummern und Straßen; Hinweis zur Ladereihenfolge (hinten zuerst); optional A/B/C-Marken in der Route
+- Fahrzeugmaße sind Richtwerte aus Hersteller- und Pressangaben
