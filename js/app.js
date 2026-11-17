@@ -1657,36 +1657,34 @@
   };
   const fmtM = x => (Math.round(x * 100) / 100).toLocaleString('de-DE');
   function cargoSvg(v, L) {
-    const k = Math.min(250 / v.w, 330 / v.l), W = v.w * k, H = v.l * k, cabH = .9 * k, padX = 44, top = 16;
-    const cargoY = top + cabH + 8, svgW = W + padX * 2, svgH = cargoY + H + 40;
+    // Nur der Laderaum (ohne Fahrerkabine). Bereiche wachsen mit dem Text, damit alle Straßennamen lesbar sind.
+    const W = 290, k = W / v.w, H = Math.min(v.l * k, 420), padX = 38, top = 26;      // Breite fest groß, damit der Text lesbar ist
     const n = L.zones.length, tot = Math.max(1, L.total);
     const raw = L.zones.map(z => .3 / n + .7 * (z.pk / tot)), sum = raw.reduce((a, b) => a + b, 0);
-    let y = cargoY; const parts = [];
+    const charsPerLine = Math.max(10, Math.floor((W - 34) / 7.6));
+    const lines = z => { const t = z.streets.join(', '); return Math.max(1, Math.ceil(t.length / charsPerLine)); };
+    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 74 + 18 + lines(z) * 16));
+    const total = hs.reduce((a, b) => a + b, 0);
+    let y = top; const parts = [];
     L.zones.forEach((z, i) => {
-      const h = H * raw[i] / sum, c = ZONE_COLORS[i];
-      parts.push(`<rect x="${padX}" y="${y.toFixed(1)}" width="${W.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".82"/>`);
+      const h = hs[i], c = ZONE_COLORS[i];
+      parts.push(`<rect x="${padX}" y="${y.toFixed(1)}" width="${W.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".86"/>`);
       if (i > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5"/>`);
-      const cy = y + h / 2, big = h > 62;
-      parts.push(`<text x="${padX + W / 2}" y="${(cy - (big ? 8 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="26" font-weight="800" fill="#fff">${ZONE_LETTERS[i]}</text>`);
-      if (big) parts.push(`<text x="${padX + W / 2}" y="${(cy + 16).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">${z.pk} Paket${z.pk === 1 ? '' : 'e'}</text>`);
+      parts.push(`<foreignObject x="${padX + 14}" y="${(y + 6).toFixed(1)}" width="${(W - 28).toFixed(1)}" height="${(h - 12).toFixed(1)}"><div xmlns="http://www.w3.org/1999/xhtml" class="zbox"><b class="zl">${ZONE_LETTERS[i]}</b><span class="zp">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</span><span class="zs">${esc(z.streets.join(', '))}</span></div></foreignObject>`);
       y += h;
     });
-    const archY = cargoY + H * .62, arch = .2 * k;
-    return `<svg viewBox="0 0 ${svgW.toFixed(0)} ${svgH.toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
-      <rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${cabH.toFixed(1)}" rx="16" fill="var(--surface-2)" stroke="var(--border)" stroke-width="2"/>
-      <rect x="${padX + 12}" y="${top + 8}" width="${(W - 24).toFixed(1)}" height="9" rx="4" fill="var(--border)"/>
-      <rect x="${padX + W * .18}" y="${top + cabH * .42}" width="${W * .26}" height="${cabH * .42}" rx="7" fill="var(--border)"/><rect x="${padX + W * .56}" y="${top + cabH * .42}" width="${W * .26}" height="${cabH * .42}" rx="7" fill="var(--border)"/>
-      <text x="${padX + W / 2}" y="${top + cabH - 2}" text-anchor="middle" font-size="10" fill="var(--muted)" font-weight="700">FAHRERKABINE</text>
-      <clipPath id="ldclip"><rect x="${padX}" y="${cargoY}" width="${W.toFixed(1)}" height="${H.toFixed(1)}" rx="10"/></clipPath>
+    const archY = top + total * .62, arch = 11, bottom = top + total;
+    return `<svg viewBox="0 0 ${(W + padX * 2).toFixed(0)} ${(bottom + 44).toFixed(0)}" class="cargo" role="img" aria-label="Laderaum von oben mit ${n} Bereichen">
+      <text x="${padX + W / 2}" y="${top - 9}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">VORNE</text>
+      <clipPath id="ldclip"><rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10"/></clipPath>
       <g clip-path="url(#ldclip)">${parts.join('')}
-        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="${(.55 * k).toFixed(1)}" fill="#000" fill-opacity=".38"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="${(.55 * k).toFixed(1)}" fill="#000" fill-opacity=".38"/></g>
-      <rect x="${padX}" y="${cargoY}" width="${W.toFixed(1)}" height="${H.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3"/>
-      <line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(cargoY + 8).toFixed(1)}" y2="${(cargoY + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
-      <text transform="translate(${padX + W + 20},${(cargoY + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>
-      <line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(cargoY + H + 6).toFixed(1)}" y2="${(cargoY + H + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
-      <text x="${padX + W / 2}" y="${(cargoY + H + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>
-      <text transform="translate(${padX - 14},${(cargoY + H / 2).toFixed(1)}) rotate(-90)" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">ca. ${fmtM(v.l)} m</text>
-      <text x="${padX + W / 2}" y="${(cargoY + H + 36).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">ca. ${fmtM(v.w)} m breit</text></svg>`;
+        <rect x="${padX}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="70" rx="3" fill="#000" fill-opacity=".28"/><rect x="${(padX + W - arch).toFixed(1)}" y="${archY.toFixed(1)}" width="${arch.toFixed(1)}" height="70" rx="3" fill="#000" fill-opacity=".28"/></g>
+      <rect x="${padX}" y="${top}" width="${W.toFixed(1)}" height="${total.toFixed(1)}" rx="10" fill="none" stroke="var(--text)" stroke-width="3"/>
+      <line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${(top + 8).toFixed(1)}" y2="${(top + 8 + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text transform="translate(${padX + W + 20},${(top + 8 + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>
+      <line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
+      <text x="${padX + W / 2}" y="${(bottom + 22).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--muted)">HECKTÜREN</text>
+      <text x="${padX + W / 2}" y="${(bottom + 37).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">Laderaum ca. ${fmtM(v.l)} × ${fmtM(v.w)} m</text></svg>`;
   }
   function openLoadSheet() {
     if (!settings.vehicle) { settings.vehicle = 'etransit'; persist(); }
@@ -1695,7 +1693,7 @@
     const empty = !L.count;
     const list = L.zones.map((z, i) => `<li class="zrow"><span class="zc big" style="--zc:${ZONE_COLORS[i]}">${ZONE_LETTERS[i]}</span>
       <div class="zt"><b>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</b>
-      <small>${z.streets.length ? esc(z.streets.slice(0, 5).join(', ')) + (z.streets.length > 5 ? ` und ${z.streets.length - 5} weitere` : '') : 'leer'}</small></div></li>`).join('');
+      <small>${z.streets.length ? esc(z.streets.join(', ')) : 'leer'}</small></div></li>`).join('');
     const order = L.zones.map((_, i) => ZONE_LETTERS[i]).reverse().join(' → ');
     openSheet('Laderaum', `<div class="ld">
       <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche und sagt, welche Stopps (Straßen) wohin gehören.</p>

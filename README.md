@@ -130,3 +130,7 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Zeichnet den Laderaum von oben (Fahrerkabine, Schiebetür, Hecktüren, Radkästen) und teilt ihn in 2, 3 oder 4 Bereiche mit ungefähr gleich vielen Paketen
 - Jeder Bereich zeigt Paketzahl, Stopp-Nummern und Straßen; Hinweis zur Ladereihenfolge (hinten zuerst); optional A/B/C-Marken in der Route
 - Fahrzeugmaße sind Richtwerte aus Hersteller- und Pressangaben
+
+## Version 17
+
+- Laderaum: nur noch der Laderaum wird gezeichnet (ohne Fahrerkabine), breit und gut lesbar; in jedem Bereich stehen Paketzahl, Stopp-Nummern und alle Straßennamen vollständig; die Liste darunter nennt ebenfalls alle Straßen

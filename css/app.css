@@ -1130,3 +1130,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .ld-tip { padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); font-size: 14px; line-height: 1.4; }
 .cargo text { stroke: none; }
 .cargo rect, .cargo line { stroke-linejoin: round; }
+
+/* Bereiche im Laderaum: Text vollständig */
+.zbox { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #fff; gap: 2px; font-family: var(--sans); overflow: hidden; }
+.zbox .zl { font-size: 28px; font-weight: 800; line-height: 1; }
+.zbox .zp { font-size: 12.5px; font-weight: 700; }
+.zbox .zs { font-size: 12px; line-height: 1.25; font-weight: 600; opacity: .96; overflow-wrap: anywhere; }
+.cargo text { stroke: none; }
