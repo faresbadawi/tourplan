@@ -1650,6 +1650,7 @@
     const zoneOf = {}; zones.forEach((z, i) => z.stops.forEach(s => { zoneOf[s.id] = i; }));
     const numOf = {}; if (route) route.order.forEach((id, i) => { numOf[id] = i + 1; }); else seq.forEach((s, i) => { numOf[s.id] = i + 1; });
     zones.forEach(z => {
+      z.nums = {}; z.stops.forEach(st => { z.nums[st.id] = numOf[st.id]; });
       z.streets = [...new Set(z.stops.map(streetOf))];
       z.from = z.stops.length ? numOf[z.stops[0].id] : null; z.to = z.stops.length ? numOf[z.stops[z.stops.length - 1].id] : null;
     });
@@ -1672,29 +1673,56 @@
     return Array.from({ length: n }, (_, i) => (Array.isArray(mine) && mine[i]) || (i < Math.ceil(n / 2) ? 'R' : 'S'));
   }
   const rearLayout = () => accMode() !== 'side';             // Bereich A (erste Stopps) liegt bei Hecktür-Zugang hinten, bei reiner Seitentür vorne
+  /* Unterteilung eines Bereichs: 'none' = ganz, 'lr' = rechts/links geteilt, 'lr2' = rechts/links und vorn/hinten (4 Felder).
+     Bei Seitentür-Bereichen ist Standard „rechts/links“: Was zuerst drankommt, liegt rechts (an der Schiebetür), das Spätere links. */
+  function zoneSplit(n) {
+    const acc = zoneAccess(n), mine = settings.zoneSplit && settings.zoneSplit[n];
+    return Array.from({ length: n }, (_, i) => (Array.isArray(mine) && mine[i]) || (acc[i] === 'S' ? 'lr' : 'none'));
+  }
+  const SPLIT_CELLS = { none: [{ side: '', row: 0 }], lr: [{ side: 'R', row: 0 }, { side: 'L', row: 0 }], lr2: [{ side: 'R', row: 0 }, { side: 'R', row: 1 }, { side: 'L', row: 0 }, { side: 'L', row: 1 }] };
+  /** Stopps eines Bereichs auf seine Felder verteilen (nach Paketzahl, in Fahrtreihenfolge) */
+  function zoneCells(z, split) {
+    const tpl = SPLIT_CELLS[split] || SPLIT_CELLS.none, m = tpl.length;
+    const cells = tpl.map(c => Object.assign({ stops: [], pk: 0 }, c)); let cum = 0;
+    z.stops.forEach(s => { const w = s.pk || 1, k = Math.min(m - 1, Math.floor(((cum + w / 2) / Math.max(1, z.pk)) * m)); cells[k].stops.push(s); cells[k].pk += w; cum += w; });
+    return cells;
+  }
+  const cellName = (c, split) => c.side === '' ? '' : (c.side === 'R' ? 'rechts' : 'links') + (split === 'lr2' ? (c.row === 0 ? ', vorn' : ', hinten') : '');
   function cargoSvg(v, L, acc) {
-    // Einfacher Grundriss nur vom Laderaum: Buchstabe, Paketzahl, Zugang. Antippen öffnet die Stopp-Liste des Bereichs.
+    // Grundriss nur vom Laderaum. Antippen eines Bereichs öffnet die Stopp-Liste.
     const rear = rearLayout(), W = 290, k = W / v.w, H = Math.min(v.l * k, 400), padX = 38, top = 26;
-    const n = L.zones.length, tot = Math.max(1, L.total);
+    const n = L.zones.length, tot = Math.max(1, L.total), splits = zoneSplit(n);
     const raw = L.zones.map(z => .3 / n + .7 * (z.pk / tot)), sum = raw.reduce((a, b) => a + b, 0);
-    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, 84));
+    const hs = L.zones.map((z, i) => Math.max(H * raw[i] / sum, splits[i] === 'lr2' ? 130 : 88));
     const total = hs.reduce((a, b) => a + b, 0), bottom = top + total;
     const order = L.zones.map((_, i) => i); if (rear) order.reverse();       // von vorn (oben) nach hinten (unten)
     let y = top; const parts = [];
     order.forEach((zi, row) => {
-      const z = L.zones[zi], h = hs[zi], c = ZONE_COLORS[zi], cy = y + h / 2;
-      parts.push(`<g class="zone" data-zone="${zi}" role="button" tabindex="0" aria-label="Bereich ${ZONE_LETTERS[zi]}: ${z.pk} Pakete, Liste öffnen">
-        <rect x="${padX}" y="${y.toFixed(1)}" width="${W}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".88"/>
+      const z = L.zones[zi], h = hs[zi], c = ZONE_COLORS[zi], cy = y + h / 2, sp = splits[zi], cells = zoneCells(z, sp), m = cells.length;
+      let g = `<g class="zone" data-zone="${zi}" role="button" tabindex="0" aria-label="Bereich ${ZONE_LETTERS[zi]}: ${z.pk} Pakete, Liste öffnen">`;
+      if (m === 1) {
+        g += `<rect x="${padX}" y="${y.toFixed(1)}" width="${W}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".88"/>
         <text x="${padX + W / 2}" y="${(cy - 12).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="34" font-weight="800" fill="#fff">${ZONE_LETTERS[zi]}</text>
-        <text x="${padX + W / 2}" y="${(cy + 15).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</text>
-        <g transform="translate(${padX + W / 2},${(cy + 34).toFixed(1)})"><rect x="-44" y="-9" width="88" height="18" rx="9" fill="#000" fill-opacity=".3"/><text text-anchor="middle" dominant-baseline="middle" y=".5" font-size="10" font-weight="800" fill="#fff">${acc[zi] === 'R' ? 'HECKTÜR' : 'SEITENTÜR'}</text></g></g>`);
+        <text x="${padX + W / 2}" y="${(cy + 15).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">${z.pk} Paket${z.pk === 1 ? '' : 'e'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</text>`;
+      } else {
+        cells.forEach((cl, ci) => {
+          const cw = W / 2, ch = sp === 'lr2' ? h / 2 : h, cx = padX + (cl.side === 'R' ? cw : 0), cyy = y + (sp === 'lr2' ? cl.row * ch : 0);
+          const nums = cl.stops.map(s => z.nums[s.id]).filter(Boolean), a = nums[0], b = nums[nums.length - 1];
+          g += `<rect x="${cx.toFixed(1)}" y="${cyy.toFixed(1)}" width="${cw}" height="${ch.toFixed(1)}" fill="${c}" fill-opacity="${ci % 2 ? .7 : .9}" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/>
+          <text x="${(cx + cw / 2).toFixed(1)}" y="${(cyy + ch / 2 - 10).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${sp === 'lr2' ? 22 : 26}" font-weight="800" fill="#fff">${ZONE_LETTERS[zi]}${ci + 1}</text>
+          <text x="${(cx + cw / 2).toFixed(1)}" y="${(cyy + ch / 2 + 10).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff">${cl.pk} Paket${cl.pk === 1 ? '' : 'e'}</text>
+          <text x="${(cx + cw / 2).toFixed(1)}" y="${(cyy + ch / 2 + 25).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" fill-opacity=".92">${a ? `Nr. ${a}${b !== a ? '–' + b : ''} · ` : ''}${cl.side === 'R' ? 'rechts' : 'links'}</text>`;
+        });
+      }
+      g += `<g transform="translate(${padX + W / 2},${(y + h - 13).toFixed(1)})"><rect x="-44" y="-9" width="88" height="18" rx="9" fill="#000" fill-opacity=".42"/><text text-anchor="middle" dominant-baseline="middle" y=".5" font-size="10" font-weight="800" fill="#fff">${acc[zi] === 'R' ? 'HECKTÜR' : 'SEITENTÜR'}</text></g></g>`;
+      parts.push(g);
       if (row > 0) parts.push(`<line x1="${padX}" x2="${padX + W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2.5" stroke-dasharray="6 5" pointer-events="none"/>`);
       y += h;
     });
     const anyR = acc.includes('R'), anyS = acc.includes('S');
-    const frontY = top + 8;
-    const side = anyS ? `<line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${frontY}" y2="${(frontY + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
-      <text transform="translate(${padX + W + 20},${(frontY + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>` : '';
+    const sideY = (() => { let yy = top, found = null; order.forEach(zi => { if (found == null && acc[zi] === 'S') found = yy; yy += hs[zi]; }); return (found ?? top) + 8; })();
+    const side = anyS ? `<line x1="${padX + W + 1.5}" x2="${padX + W + 1.5}" y1="${sideY.toFixed(1)}" y2="${(sideY + .95 * k).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
+      <text transform="translate(${padX + W + 20},${(sideY + .47 * k).toFixed(1)}) rotate(90)" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">SCHIEBETÜR</text>` : '';
     const door = anyR ? `<line x1="${padX + 4}" x2="${padX + W - 4}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"/>
       <text x="${padX + W / 2}" y="${(bottom + 24).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--accent)">HECKTÜREN</text>`
       : `<line x1="${padX + 6}" x2="${padX + W - 6}" y1="${(bottom + 6).toFixed(1)}" y2="${(bottom + 6).toFixed(1)}" stroke="var(--muted)" stroke-width="4" stroke-dasharray="3 6" stroke-linecap="round"/>
@@ -1726,84 +1754,106 @@
   }
   const VAN_ICON = '<svg viewBox="0 0 120 70" class="vanico"><path d="M8 18h66v34H8zM74 26h22l16 14v12H74z" fill="currentColor" opacity=".16" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M82 30h12l9 9H82z" fill="currentColor" opacity=".4"/><circle cx="30" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/><circle cx="92" cy="54" r="8" fill="var(--surface)" stroke="currentColor" stroke-width="4"/></svg>';
   const photoOf = k => vPhotos()[k] || (VEHICLE_PHOTO_CREDITS[k] ? `img/vehicles/${k}.jpg` : null);
+  /** Kleines Fenster, das über allem erscheint (für Fahrzeugwahl und Bereichsliste) */
+  function popup(html, onClick, onChange) {
+    const el = document.createElement('div'); el.className = 'zmodal';
+    el.innerHTML = `<div class="zcard">${html}</div>`; document.body.appendChild(el);
+    const close = () => el.remove();
+    el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-zclose]')) return close(); onClick && onClick(e, el, close); });
+    if (onChange) el.addEventListener('change', e => onChange(e, el, close));
+    return { el, close };
+  }
+  const CLOSE_ICO = `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>`;
+  function openVehiclePop() {
+    const draw = () => {
+      const v = vehicleOf(), own = vPhotos();
+      const cards = Object.entries(VEHICLES).map(([k, x]) => {
+        const ph = photoOf(k);
+        return `<div class="vcard${k === v.id ? ' on' : ''}" data-veh="${k}" role="button" tabindex="0" aria-pressed="${k === v.id}">
+        <div class="vph">${ph ? `<img src="${ph}" alt="" loading="lazy">` : VAN_ICON}</div><b>${esc(x.name)}</b><small>${esc(x.info)}</small>
+        ${k === v.id ? `<div class="vact"><label class="vbtn">${own[k] ? 'Foto ändern' : 'Eigenes Foto'}<input type="file" accept="image/*" data-vfile="${k}" hidden></label>${own[k] ? `<button type="button" class="vbtn" data-vdel="${k}">Entfernen</button>` : ''}</div>` : ''}</div>`;
+      }).join('');
+      const credits = Object.entries(VEHICLE_PHOTO_CREDITS).map(([k, c]) => `<li>${esc(VEHICLES[k].name)}: <a href="${esc(c.page)}" target="_blank" rel="noopener">Foto von ${esc(c.artist)}</a>, ${esc(c.license)}</li>`).join('');
+      return `<div class="zhead"><div><h2>Fahrzeug wählen</h2><p>Maße sind Richtwerte, bitte prüfen.</p></div><button type="button" class="circle" data-zclose aria-label="Schließen">${CLOSE_ICO}</button></div>
+        <div class="vgrid">${cards}</div>
+        ${v.id === 'custom' ? `<div class="ld-custom"><label class="field"><span>Länge (m)</span><input id="ld-l" type="number" step="0.1" min="1" max="8" inputmode="decimal" value="${fmtM(v.l).replace(',', '.')}"></label><label class="field"><span>Breite (m)</span><input id="ld-w" type="number" step="0.05" min="1" max="2.5" inputmode="decimal" value="${fmtM(v.w).replace(',', '.')}"></label></div>` : ''}
+        <details class="credits"><summary>Bildnachweise</summary><p>Beispielfotos von Wikimedia Commons (freie Lizenzen). Eigene Fotos bleiben nur auf deinem Gerät.</p><ul>${credits}</ul></details>`;
+    };
+    const pop = popup(draw(), async (e, el, close) => {
+      if (e.target.closest('label.vbtn') || e.target.closest('.credits')) return;
+      const del = e.target.closest('[data-vdel]');
+      if (del) { const ph = vPhotos(); delete ph[del.dataset.vdel]; try { localStorage.setItem('tp.vphotos', JSON.stringify(ph)); } catch (_) {} el.querySelector('.zcard').innerHTML = draw(); return; }
+      const veh = e.target.closest('[data-veh]');
+      if (veh && !e.target.closest('.vact')) {
+        settings.vehicle = veh.dataset.veh; persist();
+        if (settings.vehicle === 'custom') { el.querySelector('.zcard').innerHTML = draw(); } else { close(); }
+        refreshLoad();
+      }
+    }, async (e, el) => {
+      const t = e.target;
+      if (t.dataset.vfile) { const ok = await saveVPhoto(t.dataset.vfile, t.files[0]); if (!ok) toast('Foto konnte nicht gespeichert werden'); el.querySelector('.zcard').innerHTML = draw(); refreshLoad(); }
+      else if (t.id === 'ld-l' || t.id === 'ld-w') { settings.vehCustom = { l: +el.querySelector('#ld-l').value || 3, w: +el.querySelector('#ld-w').value || 1.7 }; persist(); refreshLoad(); }
+    });
+  }
   function openLoadSheet() {
     if (!settings.vehicle) { settings.vehicle = 'etransit'; persist(); }
-    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n), acc = zoneAccess(n), mode = accMode(), own = vPhotos();
-    const cards = Object.entries(VEHICLES).map(([k, x]) => {
-      const ph = photoOf(k), cr = VEHICLE_PHOTO_CREDITS[k];
-      return `<div class="vcard${k === v.id ? ' on' : ''}" data-veh="${k}" role="button" tabindex="0" aria-pressed="${k === v.id}">
-      <div class="vph">${ph ? `<img src="${ph}" alt="" loading="lazy">` : VAN_ICON}</div><b>${esc(x.name)}</b><small>${esc(x.info)}</small>
-      ${k === v.id ? `<div class="vact"><label class="vbtn">${own[k] ? 'Foto ändern' : 'Eigenes Foto'}<input type="file" accept="image/*" data-vfile="${k}" hidden></label>${own[k] ? `<button type="button" class="vbtn" data-vdel="${k}">Entfernen</button>` : ''}</div>` : ''}</div>`;
-    }).join('');
-    const credits = Object.entries(VEHICLE_PHOTO_CREDITS).map(([k, c]) => `<li>${esc(VEHICLES[k].name)}: <a href="${esc(c.page)}" target="_blank" rel="noopener">Foto von ${esc(c.artist)}</a>, ${esc(c.license)}</li>`).join('');
+    const v = vehicleOf(), n = settings.zoneN || 3, L = loadZones(n), acc = zoneAccess(n), mode = accMode(), ph = photoOf(v.id);
     const empty = !L.count;
     const order = L.zones.map((_, i) => ZONE_LETTERS[i]).reverse().join(' → ');
+    const hasSplit = zoneSplit(n).some(x => x !== 'none');
     const tip = mode === 'side'
       ? `<b>So laden:</b> von hinten nach vorn – ${esc(order)}. Bereich A kommt zuletzt, vorne an die Schiebetür.`
-      : `<b>So laden (von hinten):</b> von vorn nach hinten – ${esc(order)}. Bereich A kommt zuletzt, direkt an die Hecktüren.${mode === 'both' ? ' Bereiche mit „Seitentür“ holst du später über die Schiebetür heraus.' : ''}`;
+      : `<b>So laden (von hinten):</b> von vorn nach hinten – ${esc(order)}. Bereich A kommt zuletzt, direkt an die Hecktüren.`;
+    const tip2 = hasSplit ? '<br>Bereiche mit Seitentür sind rechts/links geteilt: <b>rechts</b> (an der Schiebetür) liegt, was zuerst drankommt, <b>links</b> das Spätere.' : '';
     const steppers = L.zones.slice(1).map((z, i) => `<div class="cutrow"><span class="zc" style="--zc:${ZONE_COLORS[i + 1]}">${ZONE_LETTERS[i + 1]}</span><span class="cuttxt">beginnt bei Stopp Nr. <b>${z.from ?? '–'}</b></span>
       <span class="cutbtns"><button type="button" data-cut="${i}" data-d="-1" aria-label="Eine Stelle früher">−</button><button type="button" data-cut="${i}" data-d="1" aria-label="Eine Stelle später">+</button></span></div>`).join('');
     openSheet('Laderaum', `<div class="ld">
-      <p class="ld-lead">Probefunktion: Die App teilt den Laderaum in Bereiche. Tippe auf einen Bereich, dann siehst du alle Stopps darin.</p>
-      <h3 class="mini">Fahrzeug</h3>
-      <div class="vgrid">${cards}</div>
-      <p class="ld-info">Maße sind Richtwerte, bitte prüfen. Eigene Fotos bleiben nur auf deinem Gerät.</p>
-      ${v.id === 'custom' ? `<div class="ld-custom"><label class="field"><span>Länge (m)</span><input id="ld-l" type="number" step="0.1" min="1" max="8" inputmode="decimal" value="${fmtM(v.l).replace(',', '.')}"></label><label class="field"><span>Breite (m)</span><input id="ld-w" type="number" step="0.05" min="1" max="2.5" inputmode="decimal" value="${fmtM(v.w).replace(',', '.')}"></label></div>` : ''}
-      <h3 class="mini">Wo holst du die Pakete raus?</h3>
-      <div class="segmented" id="ld-acc">${[['both', 'Beides'], ['rear', 'Von hinten'], ['side', 'Seitentür']].map(([k, t]) => `<button type="button" data-acc="${k}" aria-pressed="${mode === k}">${t}</button>`).join('')}</div>
-      <h3 class="mini">Bereiche</h3>
+      <button type="button" class="vrow" data-vpick><span class="vthumb">${ph ? `<img src="${ph}" alt="">` : VAN_ICON}</span><span class="vtxt"><small>Fahrzeug</small><b>${esc(v.name)}</b></span><span class="vchg">Ändern</span></button>
+      <div class="segmented" id="ld-acc">${[['both', 'Hinten und Seite'], ['rear', 'Von hinten'], ['side', 'Seitentür']].map(([k, t]) => `<button type="button" data-acc="${k}" aria-pressed="${mode === k}">${t}</button>`).join('')}</div>
       <div class="segmented ld-n" id="ld-n">${[2, 3, 4].map(k => `<button type="button" data-zn="${k}" aria-pressed="${k === n}">${k} Bereiche</button>`).join('')}</div>
       ${empty ? '<p class="ld-empty">Noch keine Stopps. Füge Adressen hinzu und optimiere die Route – dann erscheint hier die Aufteilung.</p>' : `
       <div class="ld-draw">${cargoSvg(v, L, acc)}</div>
-      <p class="ld-hint">Bereich antippen: alle Stopps und Straßen von hinten nach vorn</p>
-      <div class="ld-tip">${tip}</div>
+      <p class="ld-hint">Bereich antippen: Stopps und Straßen ansehen, Unterteilung ändern</p>
+      <div class="ld-tip">${tip}${tip2}</div>
       <h3 class="mini">Grenzen anpassen ${L.manual ? '<button type="button" class="link" data-cutreset>Automatisch</button>' : '<small class="muted">(automatisch nach Paketzahl)</small>'}</h3>
       <div class="cuts">${steppers}</div>
       ${route ? '' : '<p class="ld-empty">Noch ohne Optimierung – die Reihenfolge entspricht deiner Liste.</p>'}
       <label class="switch"><input type="checkbox" id="ld-chips" ${settings.zonesInList === false ? '' : 'checked'}><span class="track"><span class="thumb"></span></span><span>Bereich (A, B, C …) in der Route anzeigen</span></label>`}
-      <details class="credits"><summary>Bildnachweise</summary><p>Beispielfotos von Wikimedia Commons (freie Lizenzen):</p><ul>${credits}</ul></details>
     </div>`);
   }
-  /** Fenster mit allen Stopps eines Bereichs – von hinten nach vorn */
+  /** Fenster mit allen Stopps eines Bereichs, nach Feldern gegliedert – von hinten nach vorn */
   function openZonePop(zi) {
-    const n = settings.zoneN || 3, L = loadZones(n), z = L.zones[zi]; if (!z) return;
-    const acc = zoneAccess(n), mode = accMode();
-    const seq = rearLayout() ? z.stops : z.stops.slice().reverse();                 // Reihenfolge im Laderaum: hinten → vorne
-    const numOf = {}; if (route) route.order.forEach((id, i) => { numOf[id] = i + 1; });
-    const rows = seq.map((s, i) => `<li class="zp-row"><span class="zp-n">${numOf[s.id] || '–'}</span><div class="zp-t"><b>${esc(s.label.split(',')[0])}</b><small>${esc(s.label.split(',').slice(1, 2).join('').trim())}</small></div><span class="pk">${ICON.box}${s.pk || 1}</span></li>`).join('');
-    const el = document.createElement('div');
-    el.className = 'zmodal';
-    el.innerHTML = `<div class="zcard" role="dialog" aria-label="Bereich ${ZONE_LETTERS[zi]}">
-      <div class="zhead"><span class="zc big" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}</span><div><h2>Bereich ${ZONE_LETTERS[zi]}</h2><p>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</p></div><button type="button" class="circle" data-zclose aria-label="Schließen">${ICON.check.replace('M5 12.5l4.5 4.5L19 7.5', 'M6 6l12 12M18 6 6 18')}</button></div>
-      ${mode === 'both' ? `<div class="segmented zacc">${[['R', 'Hecktür'], ['S', 'Seitentür']].map(([k, t]) => `<button type="button" data-zacc="${k}" aria-pressed="${acc[zi] === k}">${t}</button>`).join('')}</div>` : `<p class="zp-acc">Zugang: ${mode === 'rear' ? 'Hecktür' : 'Seitentür'}</p>`}
-      <p class="zp-dir">${rearLayout() ? 'Von hinten (Tür) nach vorn' : 'Von hinten nach vorn (Schiebetür vorne)'}</p>
-      <ol class="zp-list">${rows || '<li class="zp-row">Keine Stopps</li>'}</ol></div>`;
-    document.body.appendChild(el);
-    const close = () => el.remove();
-    el.addEventListener('click', e => {
-      if (e.target === el || e.target.closest('[data-zclose]')) return close();
-      const za = e.target.closest('[data-zacc]');
-      if (za) {
-        const cur = zoneAccess(n).slice(); cur[zi] = za.dataset.zacc; settings.zoneAcc = Object.assign({}, settings.zoneAcc, { [n]: cur }); persist();
-        el.querySelectorAll('[data-zacc]').forEach(b => b.setAttribute('aria-pressed', b === za)); openLoadSheet();
-      }
+    const draw = () => {
+      const n = settings.zoneN || 3, L = loadZones(n), z = L.zones[zi]; if (!z) return '';
+      const acc = zoneAccess(n), mode = accMode(), sp = zoneSplit(n)[zi], cells = zoneCells(z, sp);
+      const numOf = {}; if (route) route.order.forEach((id, i) => { numOf[id] = i + 1; });
+      const lists = cells.map((cl, ci) => {
+        const seq = rearLayout() ? cl.stops : cl.stops.slice().reverse();                   // Reihenfolge im Laderaum: hinten → vorne
+        const rows = seq.map(s => `<li class="zp-row"><span class="zp-n">${numOf[s.id] || '–'}</span><div class="zp-t"><b>${esc(s.label.split(',')[0])}</b><small>${esc(s.label.split(',').slice(1, 2).join('').trim())}</small></div><span class="pk">${ICON.box}${s.pk || 1}</span></li>`).join('');
+        const head = cells.length > 1 ? `<h3 class="zp-cell"><span class="zc" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}${ci + 1}</span> ${cellName(cl, sp)} <small>${cl.pk} Paket${cl.pk === 1 ? '' : 'e'}</small></h3>` : '';
+        return `${head}<ol class="zp-list">${rows || '<li class="zp-row">Keine Stopps</li>'}</ol>`;
+      }).join('');
+      return `<div class="zhead"><span class="zc big" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}</span><div><h2>Bereich ${ZONE_LETTERS[zi]}</h2><p>${z.pk} Paket${z.pk === 1 ? '' : 'e'} · ${z.stops.length} Stopp${z.stops.length === 1 ? '' : 's'}${z.from ? ` · Nr. ${z.from}${z.to !== z.from ? '–' + z.to : ''}` : ''}</p></div><button type="button" class="circle" data-zclose aria-label="Schließen">${CLOSE_ICO}</button></div>
+        ${mode === 'both' ? `<h3 class="mini">Zugang</h3><div class="segmented zacc">${[['R', 'Hecktür'], ['S', 'Seitentür']].map(([k, t]) => `<button type="button" data-zacc="${k}" aria-pressed="${acc[zi] === k}">${t}</button>`).join('')}</div>` : `<p class="zp-acc">Zugang: ${mode === 'rear' ? 'Hecktür' : 'Seitentür'}</p>`}
+        <h3 class="mini">Bereich unterteilen</h3>
+        <div class="segmented zsplit">${[['none', 'Ganz'], ['lr', 'Rechts / Links'], ['lr2', '4 Felder']].map(([k, t]) => `<button type="button" data-zsplit="${k}" aria-pressed="${sp === k}">${t}</button>`).join('')}</div>
+        <p class="zp-dir">${rearLayout() ? 'Von hinten (Tür) nach vorn' : 'Von hinten nach vorn (Schiebetür vorne)'}</p>${lists}`;
+    };
+    popup(draw(), (e, el) => {
+      const n = settings.zoneN || 3, set = (key, val) => { const cur = (key === 'zoneAcc' ? zoneAccess(n) : zoneSplit(n)).slice(); cur[zi] = val; settings[key] = Object.assign({}, settings[key], { [n]: cur }); persist(); };
+      const za = e.target.closest('[data-zacc]'), zs = e.target.closest('[data-zsplit]');
+      if (za) { set('zoneAcc', za.dataset.zacc); if (!(settings.zoneSplit && settings.zoneSplit[n] && settings.zoneSplit[n][zi])) { /* Standard-Unterteilung folgt dem Zugang */ } }
+      else if (zs) set('zoneSplit', zs.dataset.zsplit);
+      else return;
+      el.querySelector('.zcard').innerHTML = draw(); openLoadSheet();
     });
   }
   $('#top-load').onclick = openLoadSheet;
   const refreshLoad = () => { openLoadSheet(); if (route) renderResult(); };
-  $('#sheet-body').addEventListener('change', async e => {
-    const t = e.target;
-    if (t.dataset.vfile) { const ok = await saveVPhoto(t.dataset.vfile, t.files[0]); if (!ok) toast('Foto konnte nicht gespeichert werden'); openLoadSheet(); }
-    else if (t.id === 'ld-l' || t.id === 'ld-w') { settings.vehCustom = { l: +$('#ld-l').value || 3, w: +$('#ld-w').value || 1.7 }; persist(); openLoadSheet(); }
-    else if (t.id === 'ld-chips') { settings.zonesInList = t.checked; persist(); if (route) renderResult(); }
-  });
+  $('#sheet-body').addEventListener('change', e => { if (e.target.id === 'ld-chips') { settings.zonesInList = e.target.checked; persist(); if (route) renderResult(); } });
   $('#sheet-body').addEventListener('click', e => {
-    if (e.target.closest('label.vbtn') || e.target.closest('.credits')) return;                  // Dateiauswahl / Bildnachweise
+    if (e.target.closest('[data-vpick]')) { openVehiclePop(); return; }
     const zone = e.target.closest('[data-zone]'); if (zone) { openZonePop(+zone.dataset.zone); return; }
-    const veh = e.target.closest('[data-veh]');
-    if (veh && !e.target.closest('.vact')) { settings.vehicle = veh.dataset.veh; persist(); refreshLoad(); return; }
-    const del = e.target.closest('[data-vdel]');
-    if (del) { const ph = vPhotos(); delete ph[del.dataset.vdel]; try { localStorage.setItem('tp.vphotos', JSON.stringify(ph)); } catch (_) {} openLoadSheet(); return; }
     const acc = e.target.closest('[data-acc]'); if (acc) { settings.vehAccess = acc.dataset.acc; persist(); refreshLoad(); return; }
     const zn = e.target.closest('[data-zn]'); if (zn) { settings.zoneN = +zn.dataset.zn; persist(); refreshLoad(); return; }
     if (e.target.closest('[data-cutreset]')) { if (settings.zoneCuts) delete settings.zoneCuts[settings.zoneN || 3]; persist(); refreshLoad(); return; }

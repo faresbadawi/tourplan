@@ -1183,3 +1183,18 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 .zp-t { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .zp-t b { font-size: 15px; overflow-wrap: anywhere; }
 .zp-t small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+
+/* Laderaum: Fahrzeug-Zeile, geteilte Bereiche */
+.vrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px 8px 8px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); text-align: left; cursor: pointer; }
+.vthumb { flex: none; width: 64px; height: 48px; border-radius: 10px; overflow: hidden; background: var(--surface-2); display: grid; place-items: center; color: var(--accent); }
+.vthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vthumb .vanico { width: 80%; }
+.vtxt { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.vtxt small { color: var(--muted); font-size: 12px; }
+.vtxt b { font-size: 15.5px; overflow-wrap: anywhere; }
+.vchg { flex: none; color: var(--accent); font-weight: 700; font-size: 14px; }
+.zp-cell { display: flex; align-items: center; gap: 8px; margin: 10px 2px 2px; font-size: 15px; }
+.zp-cell small { margin-left: auto; color: var(--muted); font-weight: 600; }
+.zmodal .vgrid { max-height: 56dvh; overflow: auto; padding: 2px; }
+.zmodal h3.mini { margin: 6px 2px -2px; }
+.zsplit button, .zacc button { font-size: 13px; padding: 9px 4px; }

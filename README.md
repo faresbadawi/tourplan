@@ -158,3 +158,9 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 | StreetScooter Work L | Superbass | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:2016-12-10-Post_Streetscooter-9409.jpg) |
 | Mercedes Sprinter | Herranderssvensson | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:2018_MB_Sprinter_3.jpg) |
 | Mercedes Vito / VW Transporter | Thomas doerfer | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Mercedes-Benz_Vito_Kastenwagen_(447).JPG) |
+
+## Version 20
+
+- Laderaum: Fahrzeugwahl nur noch im Pop-up („Ändern“ in der Fahrzeug-Zeile), das Laderaum-Fenster konzentriert sich auf den Grundriss
+- Bereiche mit Seitentür-Zugang sind standardmäßig rechts/links geteilt (rechts = an der Schiebetür, was zuerst drankommt; links das Spätere)
+- Jeden Bereich kann man selbst unterteilen: Ganz, Rechts/Links oder 4 Felder (rechts/links × vorn/hinten); die Stopp-Liste im Bereichs-Fenster ist nach Feldern gegliedert
