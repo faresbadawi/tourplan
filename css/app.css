@@ -1214,11 +1214,10 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 /* Ladebereich (A, B, C …) im Kartenvollbild: Ecke am Pin, Feld in der Leiste, Hinweis im Pop-up */
 .pin { position: relative; }
 .pin .pz { position: absolute; top: -9px; right: -11px; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 6px; display: grid; place-items: center;
-  font: 800 11px/1 var(--sans); font-style: normal; color: #fff; background: var(--zc); border: 2px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  font: 800 11px/1 var(--sans); font-style: normal; color: #fff; background: var(--zc); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .pin.current .pz { transform: scale(.85); }
 .map-bar .mb-zone { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-  background: color-mix(in srgb, var(--zc) 16%, transparent); border: 1.5px solid color-mix(in srgb, var(--zc) 70%, transparent);
-  color: var(--zc); font-size: 17px; font-weight: 800; line-height: 1; }
+  background: var(--zc); border: 2.5px solid #fff; color: #fff; font-size: 17px; font-weight: 800; line-height: 1; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .pp-pk .pp-zone { margin-left: auto; padding: 6px 10px; border-radius: 10px; background: var(--zc); color: #fff; font-weight: 800; font-size: 15px; }
 
 /* Vollbild-Leiste: Paketzähler, große Straße, Knöpfe in eigener Zeile */
@@ -1231,7 +1230,7 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 .map-bar .mb-info span { white-space: normal; }
 .map-bar .mb-acts { display: flex; gap: 8px; }
 .map-bar .mb-acts .dock-btn { flex: 1; height: 54px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; }
-.map-bar .mb-acts .mb-skip { flex: none; width: 54px; padding: 0; color: var(--muted); }
+.map-bar .mb-acts .mb-skip { flex: none; width: 54px; padding: 0; background: var(--warn); border-color: var(--warn); color: #fff; }
 .map-bar .mb-acts .dock-btn svg { width: 20px; height: 20px; }
 @media (max-width: 440px) { .map-bar .dock-btn.primary span { display: inline; } }
 .map-fab.depot { right: 12px; top: calc(180px + env(safe-area-inset-top)); }
