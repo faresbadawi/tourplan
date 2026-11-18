@@ -412,6 +412,7 @@
       if (token !== owner.token) return;
       if (!style) { toast('Karte gerade nicht erreichbar', 3500); return; }
       owner.tiles = L.maplibreGL({ style, attribution: st.attr }).addTo(map);
+      if (owner.onBase) owner.onBase();          // Route jetzt in die Vektorkarte (unter die Straßennamen) legen
     } else {
       owner.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(map);
     }
@@ -473,18 +474,24 @@
       const bounds = [[depot.lat, depot.lon]];
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 
+      const gl = this.tiles && this.tiles.getMaplibreMap ? this.tiles.getMaplibreMap() : null;
+      const curStop = route && currentIndex() !== -1 ? stopById(route.order[currentIndex()]) : null;
+      if (gl) this.glRoute(gl, route ? route.geometry : null, accent, curStop ? Geo.parseQuery(curStop.query).street : '');
       if (route) {
-        L.polyline(route.geometry, { color: mapDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
-        L.polyline(route.geometry, { color: accent, weight: 6, opacity: .95 }).addTo(this.layers);
+        if (!gl) {                                   // Rasterkarte: Linie über der Karte (Namen sind dort Teil der Kacheln)
+          L.polyline(route.geometry, { color: mapDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
+          L.polyline(route.geometry, { color: accent, weight: 6, opacity: .95 }).addTo(this.layers);
+        }
         const cur = currentIndex();
         route.order.forEach((id, i) => {
           const s = stopById(id); if (!s) return;
           const cls = route.done[id] === 'skip' ? 'done skipped' : route.done[id] ? 'done' : (i === cur ? 'current' : '');
           const pk = s.pk || 1;
           const parts = s.label.split(','), street = parts[0], town = parts.slice(1, 3).join(',').replace(/\b\d{5}\b\s*/, '').trim();
-          const mk = this.pin(s, i + 1, cls).bindPopup(`<div class="pin-pop">
+          const zi = route.done[id] ? null : zoneIdx(id), zb = zi != null ? `<i class="pz" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}</i>` : '';
+          const mk = this.pin(s, i + 1 + zb, cls).bindPopup(`<div class="pin-pop">
             <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
-            <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span></div>
+            <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span>${zi != null ? `<span class="pp-zone" style="--zc:${ZONE_COLORS[zi]}">Bereich ${ZONE_LETTERS[zi]}</span>` : ''}</div>
             <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button><button type="button" data-pin-skip="${id}">Überspringen</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
             { closeButton: false, offset: [0, -20], className: 'pin-popup', autoPanPadding: [24, 120], maxWidth: 240, minWidth: 220 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
@@ -517,6 +524,36 @@
         else if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
       }, 50);
     },
+    /** Vektorkarte: Route unter die Straßennamen legen und die Straße des nächsten Stopps hervorheben */
+    glRoute(gl, geom, accent, street) {
+      const run = () => {
+        try {
+          const dark = mapDark(), sym = (gl.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
+          const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: (geom || []).map(([a, b]) => [b, a]) } };
+          const st = (street || '').trim(), f = st ? ['any', ['==', ['get', 'name'], st], ['==', ['get', 'name:de'], st]] : ['==', ['get', 'name'], '\u0000'];
+          if (!gl.getSource('tp-route')) {
+            gl.addSource('tp-route', { type: 'geojson', data });
+            gl.addLayer({ id: 'tp-street-glow', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation_name', filter: f,
+              layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 8, 17, 26, 19, 40], 'line-opacity': .3 } }, sym);
+            gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 10, 'line-opacity': .55 } }, sym);
+            gl.addLayer({ id: 'tp-route-line', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 6, 'line-opacity': .9 } }, sym);
+            gl.addLayer({ id: 'tp-street-name', type: 'symbol', source: 'openmaptiles', 'source-layer': 'transportation_name', filter: f, minzoom: 12,
+              layout: { 'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:de'], ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'symbol-spacing': 180,
+                'text-size': ['interpolate', ['linear'], ['zoom'], 13, 14, 16, 18, 19, 24], 'text-padding': 0, 'text-allow-overlap': true, 'text-ignore-placement': true },
+              paint: { 'text-halo-width': 3 } });
+          } else gl.getSource('tp-route').setData(data);
+          gl.setFilter('tp-street-glow', f); gl.setFilter('tp-street-name', f);
+          gl.setPaintProperty('tp-street-glow', 'line-color', accent);
+          gl.setPaintProperty('tp-route-case', 'line-color', dark ? '#000' : '#fff');
+          gl.setPaintProperty('tp-route-line', 'line-color', accent);
+          gl.setPaintProperty('tp-street-name', 'text-color', dark ? '#FFFFFF' : '#111827');
+          gl.setPaintProperty('tp-street-name', 'text-halo-color', accent);
+        } catch (e) { console.warn('Route in Vektorkarte:', e); }
+      };
+      const tryRun = n => { if (gl.isStyleLoaded()) run(); else if (n < 60) setTimeout(() => tryRun(n + 1), 250); };
+      tryRun(0);
+    },
+    onBase() { if (this.map && settings.depot) this.render(); },
     renderPois() {
       if (!this.poiLayer) return;
       this.poiLayer.clearLayers();
@@ -1691,6 +1728,8 @@
     const cuts = []; let acc = 0; zones.slice(0, -1).forEach(z => { acc += z.stops.length; cuts.push(acc); });
     return { zones, total, count: seq.length, zoneOf, cuts, manual };
   }
+  /** Ladebereich (0 = A …) eines Stopps, wenn ein Fahrzeug gewählt ist */
+  const zoneIdx = id => (settings.vehicle && route ? loadZones(settings.zoneN || 3).zoneOf[id] : null);
   const zoneChip = id => {
     if (!settings.vehicle || settings.zonesInList === false || !route) return '';
     const z = loadZones(settings.zoneN || 3).zoneOf[id]; if (z == null) return '';
@@ -2095,7 +2134,8 @@
     const s = cur !== -1 ? stopById(route.order[cur]) : settings.depot;
     const title = cur !== -1 ? s.label.split(',')[0] : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
     const sub = cur !== -1 ? `Stopp ${cur + 1} von ${n} · ${fmtDur(route.legs[cur].dur)}${s.pk ? ' · ' + pkLabel(s.pk) : ''}` : `Alle ${n} Stopps erledigt`;
-    bar.innerHTML = `<span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>
+    const zi = cur !== -1 ? zoneIdx(s.id) : null;
+    bar.innerHTML = `<span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich"><small>Bereich</small>${ZONE_LETTERS[zi]}</span>` : ''}
       <button class="mb-info" id="mb-info"><b>${esc(title)}</b><span>${sub}</span></button>
       ${cur !== -1 ? `<button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}</button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}</button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}`;
