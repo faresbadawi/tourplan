@@ -2134,19 +2134,28 @@
   /* Leiste im Kartenvollbild: nur nächster Stopp, Haken und Navigation */
   function renderMapBar() {
     const bar = $('#map-bar');
+    $('#map-depot').hidden = !Map_.full || !settings.depot;
     if (!route || !Map_.full) { bar.hidden = true; return; }
     const cur = currentIndex(), n = route.order.length;
     const s = cur !== -1 ? stopById(route.order[cur]) : settings.depot;
-    const title = cur !== -1 ? s.label.split(',')[0] : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
-    const sub = cur !== -1 ? `Stopp ${cur + 1} von ${n} · ${fmtDur(route.legs[cur].dur)}${s.pk ? ' · ' + pkLabel(s.pk) : ''}` : `Alle ${n} Stopps erledigt`;
+    const open = route.order.map(stopById).filter(x => x && !route.done[x.id]);
+    const pkLeft = open.reduce((a, x) => a + (x.pk || 1), 0);
+    // Straße + Hausnummer aus der Eingabe (das Label beginnt manchmal mit einem Geschäftsnamen)
+    const street = cur !== -1 ? (s.poi ? s.label.split(',')[0] : s.query.split(',')[0]) : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
+    const parts = (s.label || '').split(',').map(t => t.trim());
+    const town = cur !== -1 ? (parts.find(t => /\b\d{5}\b/.test(t)) || (parts.length > 1 ? parts[parts.length - 1] : '')).replace(/\b\d{5}\b\s*/, '').trim() : '';
+    const sub = cur !== -1 ? [town, fmtDur(route.legs[cur].dur), s.pk ? pkLabel(s.pk) : ''].filter(Boolean).join(' · ') : `Alle ${n} Stopps erledigt`;
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
-    bar.innerHTML = `<span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich"><small>Bereich</small>${ZONE_LETTERS[zi]}</span>` : ''}
-      <button class="mb-info" id="mb-info"><b>${esc(title)}</b><span>${sub}</span></button>
-      ${cur !== -1 ? `<button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}</button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}</button>`}
-      ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}`;
+    bar.innerHTML = `<div class="mb-stats">${ICON.box}<b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'} übrig<span>·</span><b>${open.length}</b> von ${n} Stopps offen</div>
+      <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich"><small>Bereich</small>${ZONE_LETTERS[zi]}</span>` : ''}
+      <button class="mb-info" id="mb-info"><b>${esc(street)}</b><span>${esc(sub)}</span></button></div>
+      <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen">${ICON.skip}<span>Überspringen</span></button>
+        <button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}<span>Erledigt</span></button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`}
+      ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}</div>`;
     bar.hidden = false;
     $('#mb-info').onclick = () => Map_.flyTo(s, 17, .8);
   }
+  $('#map-depot').onclick = () => $('#top-depot').onclick();
 
   function renderDock() {
     renderTop(); renderMapBar();
