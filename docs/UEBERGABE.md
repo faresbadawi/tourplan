@@ -92,17 +92,16 @@ Entwicklungsumgebung auf dem Laptop des Nutzers: JDK 17 unter `~/jdk`, Android-S
 - Zum Testen der Karte gibt es keine Schlüssel. Die Vektorkarte lädt im nachgestellten Handy-Bildschirm teils erst nach 10–15 Sekunden.
 - Service Worker ist nur auf `https:` und `localhost` aktiv; bei Änderungen die Cache-Version in `sw.js` erhöhen.
 
-## 10. Stand native App (`app/`, 17.11.2026)
+## 10. Claude-Connector (MCP, Stand 18.11.2026)
 
-Expo SDK 58 / React Native 0.88, MapLibre React Native 11. Einstieg `app/App.tsx`, Logik in `app/src/`:
-`parse.js`/`optimize.js` (aus der Web-App übernommen), `geo.ts` (Photon/Nominatim, OSRM), `ai.ts` (Groq **und** Gemini, automatischer Wechsel bei Fehlern), `store.ts` (AsyncStorage `tp.v1`), `MapScreen.tsx`, `LoadScreen.tsx`, `HistoryScreen.tsx`, `ui.tsx`.
+React Native und die Capacitor-APK wurden verworfen – es bleibt bei der Web-App.
+Neu: ein MCP-Server in `mcp/` (Cloudflare Worker `tourplan-mcp`), als eigener Connector in Claude eingebunden.
 
-Tabs: Tour (Eingabe, KI, Optimieren, Fahren mit Zugestellt/Überspringen), Karte (OpenFreeMap hell/dunkel, Route, Pins antippbar), Laderaum (Fahrzeug, Zugang, 2–4 Bereiche), Verlauf (Tempo je Stopp, Pakete/Stunde), Optionen.
-
-APK bauen (ohne Expo-Konto):
-```
-cd app && npx expo prebuild --platform android
-cd android && JAVA_HOME=~/jdk ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
-# → android/app/build/outputs/apk/release/app-release.apk (mit Debug-Schlüssel signiert)
-```
-Noch offen gegenüber der Web-App: Offline-Karten, Straßenverzeichnis/Korrekturvorschläge, Hintergrund-Standort, eigener Release-Schlüssel für den Play Store.
+- Claude zerlegt diktierte Adressen selbst (Regeln in `INSTRUCTIONS`), optional `adressen_pruefen` (Photon, max. 25),
+  dann `tour_link_erstellen` → Link `…/tourplan/#tour=<base64url {a:[Zeilen], k?:1, r?:bool}>`.
+- Die App (`js/app.js`, `tourLink`) übernimmt die Zeilen wie getippte Adressen (Straßenverzeichnis, Korrekturen),
+  sucht sie und sortiert danach selbst (`plan(true)`; mit `k` bleibt die Reihenfolge).
+- Sortiert wird bewusst in der App: Cloudflare Free erlaubt nur 10 ms Rechenzeit und 50 Unteranfragen je Aufruf.
+- Geheimer Pfad: `https://tourplan-mcp.<konto>.workers.dev/<SECRET>/mcp`, SECRET in `mcp/.dev.vars` (nicht im Repo).
+- Neu hochladen: `cd mcp && npx wrangler deploy`.
+- Kartenbibliotheken liegen jetzt lokal in `vendor/` statt auf CDNs.

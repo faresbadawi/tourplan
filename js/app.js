@@ -23,6 +23,16 @@
   } catch (_) {}
   let stops = load('tp.stops', []);
   let route = load('tp.route', null);
+  // Tour aus einem Link übernehmen (#tour=…, z. B. vom Tourplan-Connector in Claude). Die Zeilen laufen wie getippte Adressen durch die App.
+  let tourLink = null, planAfterGeo = null;
+  try {
+    const m = location.hash.match(/^#tour=(.+)$/);
+    if (m) {
+      history.replaceState(null, '', location.pathname + location.search);
+      const t = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')))));
+      if (Array.isArray(t.a) && t.a.length) tourLink = t;
+    }
+  } catch (_) {}
   if (route) delete route._sum;                     // Altlast aus Version 4/5
   let history_ = load('tp.history', []);
   const persist = () => { save('tp.settings', settings); save('tp.stops', stops); save('tp.route', route); };
@@ -838,6 +848,7 @@
   function geocodingDone() {
     renderStops();
     if (jumpAfter) { jumpAfter = false; problemIdx = 0; const l = route ? stops.filter(x => !route.order.includes(x.id)) : stops; if (problemsOf(l).length) setTimeout(jumpToProblem, 250); }
+    if (planAfterGeo && !stops.some(s => s.status === 'pending')) { const k = planAfterGeo; planAfterGeo = null; if (stops.some(s => s.status === 'ok')) plan(k === 'opt'); return; }
     // läuft schon eine Tour, kommen neue Adressen automatisch an die beste Stelle
     if (route && stops.some(s => s.status === 'ok' && !route.order.includes(s.id))) plan('insert');
   }
@@ -2513,6 +2524,17 @@
     renderResult();
     Map_.syncTouch();
     runGeocoding();
+    if (tourLink) {
+      const t = tourLink; tourLink = null;
+      if (!stops.length || confirm(`Neue Tour mit ${t.a.length} Adressen übernehmen? Die aktuelle Liste wird ersetzt.`)) {
+        if (typeof t.r === 'boolean') settings.roundtrip = t.r;
+        stops = []; route = null;
+        const n = addAddresses(t.a.map(String));
+        planAfterGeo = t.k ? 'keep' : 'opt';
+        persist(); renderStops(); renderResult(); runGeocoding();
+        toast(`${n} Adressen übernommen – werden gesucht und sortiert …`, 3500);
+      }
+    }
     Pois.refresh();
     loadIndex(false);
     setTimeout(() => Me.auto(), 900);             // Standort schon erlaubt → gleich auf der Startkarte zeigen

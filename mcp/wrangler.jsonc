@@ -1,0 +1,8 @@
+{
+  "name": "tourplan-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "APP_URL": "https://faresbadawi.github.io/tourplan/" }
+  // Geheimer Pfad: npx wrangler secret put SECRET
+}
