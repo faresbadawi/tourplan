@@ -2029,7 +2029,7 @@
       pk: ordered.some(s => s.pk) ? ordered.reduce((a, s) => a + (s.pk || 1), 0) : null,
       pkDone: ordered.filter(s => route.done[s.id] === true).reduce((a, s) => a + (s.pk || 1), 0),
       dist: Math.round(route.legs.reduce((a, l) => a + l.dist, 0)), dur: Math.round(route.legs.reduce((a, l) => a + l.dur, 0)),
-      list: ordered.map(s => ({ q: s.label, pk: s.pk || null, done: route.done[s.id] === true, skip: route.done[s.id] === 'skip' })),
+      list: ordered.map(s => ({ q: s.label, query: s.query, lat: s.lat, lon: s.lon, pk: s.pk || null, done: route.done[s.id] === true, skip: route.done[s.id] === 'skip' })),
     });
     history_ = history_.slice(0, 300);
     save('tp.history', history_);
@@ -2080,7 +2080,7 @@
         <div><dt>Zeitraum</dt><dd>${fmtTime(new Date(t.start))}–${fmtTime(new Date(t.end))} Uhr</dd></div>
       </dl>
       <ol class="hist-list">${t.list.map(x => `<li class="${x.done ? '' : 'open'}">${esc(x.q)}${x.pk ? ` <i>${pkLabel(x.pk)}</i>` : ''}${x.done ? '' : (x.skip ? ' <em>zurück ins Depot</em>' : ' <em>nicht erledigt</em>')}</li>`).join('')}</ol>
-      <div class="row-actions"><button class="btn ghost danger" data-tour-del="${t.id}">Löschen</button><button class="btn ghost" data-hist-back>Zurück</button><button class="btn primary" data-tour-load="${t.id}">Adressen neu laden</button></div>`);
+      <div class="row-actions"><button class="btn ghost danger" data-tour-del="${t.id}">Löschen</button><button class="btn ghost" data-hist-back>Zurück</button><button class="btn primary" data-tour-load="${t.id}">Tour neu starten</button></div>`);
   }
   $('#history-open').onclick = () => { histDay = null; histMonth = null; openHistory(); };
   $('#sheet-body').addEventListener('click', e => {
@@ -2096,10 +2096,19 @@
     const ld = e.target.closest('[data-tour-load]');
     if (ld) {
       const t = history_.find(x => x.id === ld.dataset.tourLoad);
-      if ((stops.length || route) && !confirm('Die Adressen kommen zu deiner aktuellen Liste dazu. Fortfahren?')) return;
+      if ((stops.length || route) && !confirm(`Diese Tour mit ${t.list.length} Stopps neu starten? Deine aktuelle Liste wird ersetzt.`)) return;
       closeSheet();
-      const n = addAddresses(t.list.map(x => x.q + (x.pk ? ', ' + pkLabel(x.pk) : '')));
-      toast(`${n} Adresse${n === 1 ? '' : 'n'} geladen`);
+      // Gleiche Stopps, gleiche Paketzahlen, gleiche Reihenfolge – als neue Tour
+      stops = []; route = null; openId = editingId = null;
+      if (t.list.every(x => typeof x.lat === 'number')) {
+        stops = t.list.map(x => ({ id: uid(), query: x.query || x.q, label: x.q, lat: x.lat, lon: x.lon, pk: x.pk || null, status: 'ok' }));
+        persist(); renderStops(); renderResult(); plan(false);
+      } else {                                      // ältere Touren ohne gespeicherte Koordinaten: Adressen neu suchen, dann starten
+        addAddresses(t.list.map(x => (x.query || x.q) + (x.pk ? ', ' + pkLabel(x.pk) : '')));
+        planAfterGeo = 'keep'; persist(); renderStops(); renderResult(); runGeocoding();
+      }
+      scrollTo({ top: 0, behavior: 'smooth' });
+      toast(`Tour mit ${t.list.length} Stopps neu gestartet`, 3500);
     }
   });
 
