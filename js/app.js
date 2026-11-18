@@ -480,8 +480,7 @@
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 
       const gl = this.tiles && this.tiles.getMaplibreMap ? this.tiles.getMaplibreMap() : null;
-      const curStop = route && currentIndex() !== -1 ? stopById(route.order[currentIndex()]) : null;
-      if (gl) this.glRoute(gl, route ? route.geometry : null, accent, curStop ? Geo.parseQuery(curStop.query).street : '');
+      if (gl) this.glRoute(gl, route ? route.geometry : null, accent);
       if (route) {
         if (!gl) {                                   // Rasterkarte: Linie über der Karte (Namen sind dort Teil der Kacheln)
           L.polyline(route.geometry, { color: mapDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
@@ -529,30 +528,19 @@
         else if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
       }, 50);
     },
-    /** Vektorkarte: Route unter die Straßennamen legen und die Straße des nächsten Stopps hervorheben */
-    glRoute(gl, geom, accent, street) {
+    /** Vektorkarte: Route unter die Straßennamen legen, damit Namen und Hausnummern lesbar bleiben */
+    glRoute(gl, geom, accent) {
       const run = () => {
         try {
           const dark = mapDark(), sym = (gl.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
           const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: (geom || []).map(([a, b]) => [b, a]) } };
-          const st = (street || '').trim(), f = st ? ['any', ['==', ['get', 'name'], st], ['==', ['get', 'name:de'], st]] : ['==', ['get', 'name'], '\u0000'];
           if (!gl.getSource('tp-route')) {
             gl.addSource('tp-route', { type: 'geojson', data });
-            gl.addLayer({ id: 'tp-street-glow', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation_name', filter: f,
-              layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 8, 17, 26, 19, 40], 'line-opacity': .3 } }, sym);
             gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 10, 'line-opacity': .55 } }, sym);
             gl.addLayer({ id: 'tp-route-line', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 6, 'line-opacity': .9 } }, sym);
-            gl.addLayer({ id: 'tp-street-name', type: 'symbol', source: 'openmaptiles', 'source-layer': 'transportation_name', filter: f, minzoom: 12,
-              layout: { 'symbol-placement': 'line', 'text-field': ['coalesce', ['get', 'name:de'], ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'symbol-spacing': 180,
-                'text-size': ['interpolate', ['linear'], ['zoom'], 13, 14, 16, 18, 19, 24], 'text-padding': 0, 'text-allow-overlap': true, 'text-ignore-placement': true },
-              paint: { 'text-halo-width': 3 } });
           } else gl.getSource('tp-route').setData(data);
-          gl.setFilter('tp-street-glow', f); gl.setFilter('tp-street-name', f);
-          gl.setPaintProperty('tp-street-glow', 'line-color', accent);
           gl.setPaintProperty('tp-route-case', 'line-color', dark ? '#000' : '#fff');
           gl.setPaintProperty('tp-route-line', 'line-color', accent);
-          gl.setPaintProperty('tp-street-name', 'text-color', dark ? '#FFFFFF' : '#111827');
-          gl.setPaintProperty('tp-street-name', 'text-halo-color', accent);
         } catch (e) { console.warn('Route in Vektorkarte:', e); }
       };
       const tryRun = n => { if (gl.isStyleLoaded()) run(); else if (n < 60) setTimeout(() => tryRun(n + 1), 250); };
