@@ -328,8 +328,9 @@
     hot: { name: 'Klar', filter: true, attr: OSM_ATTR + ' · Humanitarian OSM Team', url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png' },
     osm: { name: 'Standard', filter: true, attr: OSM_ATTR, url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
     sat: { name: 'Satellit', filter: false, attr: 'Bilder &copy; Esri, Maxar, Earthstar Geographics', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+    // 512er-Kacheln mit großen Beschriftungen auf 256 Pixel gezeichnet = gestochen scharf auf Handy-Bildschirmen
     here: { name: 'HERE', filter: false, attr: '&copy; HERE',
-      url: dark => `https://maps.hereapi.com/v3/base/mc/{z}/{x}/{y}/png8?style=${dark ? 'explore.night' : 'explore.day'}&lang=de&size=256&apiKey=${encodeURIComponent(settings.here)}` },
+      url: dark => `https://maps.hereapi.com/v3/base/mc/{z}/{x}/{y}/png?style=${dark ? 'explore.night' : 'explore.day'}&lang=de&size=512&ppi=400&apiKey=${encodeURIComponent(settings.here)}` },
     tomtom: { name: 'TomTom', filter: false, attr: '&copy; TomTom',
       url: dark => `https://api.tomtom.com/map/1/tile/basic/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png?key=${encodeURIComponent(settings.tomtom)}` },
   };
