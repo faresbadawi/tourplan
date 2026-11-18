@@ -2147,9 +2147,9 @@
     const sub = cur !== -1 ? [town, fmtDur(route.legs[cur].dur), s.pk ? pkLabel(s.pk) : ''].filter(Boolean).join(' · ') : `Alle ${n} Stopps erledigt`;
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
     bar.innerHTML = `<div class="mb-stats">${ICON.box}<b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'} übrig<span>·</span><b>${open.length}</b> von ${n} Stopps offen</div>
-      <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich"><small>Bereich</small>${ZONE_LETTERS[zi]}</span>` : ''}
+      <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}
       <button class="mb-info" id="mb-info"><b>${esc(street)}</b><span>${esc(sub)}</span></button></div>
-      <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen">${ICON.skip}<span>Überspringen</span></button>
+      <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen" title="Überspringen">${ICON.skip}</button>
         <button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}<span>Erledigt</span></button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}</div>`;
     bar.hidden = false;
