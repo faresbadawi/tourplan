@@ -5,7 +5,7 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   /* ---------- Zustand ---------- */
-  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'vec', area: null, tomtom: '', meIcon: 'arrow' };
+  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'vec', area: null, tomtom: '', here: '', meIcon: 'arrow' };
   const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
@@ -167,7 +167,7 @@
     el.dataset.value = navKey();
   }
   function renderMapStyleChoices(el) {
-    const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
+    const keys = Object.keys(MAP_STYLES).filter(styleOk);
     el.innerHTML = keys.map(k => `<button data-ms="${k}" aria-pressed="${mapStyle() === k}">${MAP_STYLES[k].name}</button>`).join('');
     el.onclick = e => {
       const b = e.target.closest('[data-ms]'); if (!b) return;
@@ -328,9 +328,13 @@
     hot: { name: 'Klar', filter: true, attr: OSM_ATTR + ' · Humanitarian OSM Team', url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png' },
     osm: { name: 'Standard', filter: true, attr: OSM_ATTR, url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
     sat: { name: 'Satellit', filter: false, attr: 'Bilder &copy; Esri, Maxar, Earthstar Geographics', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+    here: { name: 'HERE', filter: false, attr: '&copy; HERE',
+      url: dark => `https://maps.hereapi.com/v3/base/mc/{z}/{x}/{y}/png8?style=${dark ? 'explore.night' : 'explore.day'}&lang=de&size=256&apiKey=${encodeURIComponent(settings.here)}` },
     tomtom: { name: 'TomTom', filter: false, attr: '&copy; TomTom',
       url: dark => `https://api.tomtom.com/map/1/tile/basic/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png?key=${encodeURIComponent(settings.tomtom)}` },
   };
+  /** Kartenstile mit eigenem Schlüssel nur anbieten, wenn der Schlüssel eingetragen ist */
+  function styleOk(k) { return (k !== 'tomtom' || !!settings.tomtom) && (k !== 'here' || !!settings.here); }
   /** Karte hell oder dunkel – unabhängig vom Design der App wählbar */
   const mapDark = () => settings.mapMode === 'dark' ? true : settings.mapMode === 'light' ? false : isDark();
   /* ---------- Vektorkarte von OpenFreeMap: Straßennamen, Hausnummern, Gebäude; Offline-Speichern ist dort ausdrücklich erlaubt ---------- */
@@ -417,7 +421,7 @@
       owner.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(map);
     }
   }
-  const mapStyle = () => (MAP_STYLES[settings.mapStyle] && (settings.mapStyle !== 'tomtom' || settings.tomtom)) ? settings.mapStyle : 'vec';
+  const mapStyle = () => (MAP_STYLES[settings.mapStyle] && styleOk(settings.mapStyle)) ? settings.mapStyle : 'vec';
   const Map_ = {
     map: null, tiles: null, layers: null, poiLayer: null, me: null, full: false, lastFit: '',
     place() {                       // Karte in den passenden Platz hängen (Handy: im Ergebnis, breit: rechts, Vollbild: direkt in die Seite)
@@ -455,7 +459,7 @@
       attachBase(this, this.map, st, dark);
     },
     cycleStyle() {
-      const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
+      const keys = Object.keys(MAP_STYLES).filter(styleOk);
       settings.mapStyle = keys[(keys.indexOf(mapStyle()) + 1) % keys.length]; persist(); this.setTiles();
       const old = $('#map-wrap .map-style-chip'); if (old) old.remove();
       const chip = document.createElement('div'); chip.className = 'map-style-chip'; chip.textContent = MAP_STYLES[mapStyle()].name;
@@ -718,9 +722,9 @@
   };
 
   /* ---------- Kartenstil und Standort-Symbol selbst wählen ---------- */
-  const STYLE_INFO = { vec: 'Straßennamen, Hausnummern und Gebäude – auch offline', de: 'deutsche Beschriftung, gut lesbar', hot: 'ruhig, Häuser und Wege deutlich', osm: 'die klassische OpenStreetMap', sat: 'Luftbild – Einfahrten und Höfe erkennen', tomtom: 'mit deinem TomTom-Schlüssel' };
+  const STYLE_INFO = { vec: 'Straßennamen, Hausnummern und Gebäude – auch offline', de: 'deutsche Beschriftung, gut lesbar', hot: 'ruhig, Häuser und Wege deutlich', osm: 'die klassische OpenStreetMap', sat: 'Luftbild – Einfahrten und Höfe erkennen', here: 'mit deinem HERE-Schlüssel', tomtom: 'mit deinem TomTom-Schlüssel' };
   function openLayerSheet() {
-    const keys = Object.keys(MAP_STYLES).filter(k => k !== 'tomtom' || settings.tomtom);
+    const keys = Object.keys(MAP_STYLES).filter(styleOk);
     openSheet('Karte', `<div class="menu">${keys.map(k => `<button class="menu-item${mapStyle() === k ? ' now' : ''}" data-style="${k}">${ICON.route}<span><b>${MAP_STYLES[k].name}</b><small>${STYLE_INFO[k]}</small></span>${mapStyle() === k ? ICON.check : ''}</button>`).join('')}</div>
       <h3 class="mini">Karte hell oder dunkel</h3>
       <div class="segmented" id="ly-mode">${[['auto', 'Wie die App'], ['light', 'Hell'], ['dark', 'Dunkel']].map(([k, v]) => `<button data-mapmode="${k}" aria-pressed="${(settings.mapMode || 'auto') === k}">${v}</button>`).join('')}</div>
@@ -2480,11 +2484,12 @@
     $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
     renderAreaChips($('#s-area'));
     $('#s-tomtom').value = settings.tomtom || '';
+    $('#s-here').value = settings.here || '';
     $('#s-ai-key').value = settings.aiKey || '';
     renderIndexInfo();
     const ar = settings.area || [];
     $('#s-area-sum').textContent = ar.length ? ar.slice(0, 3).join(', ') + (ar.length > 3 ? ` + ${ar.length - 3} weitere` : '') : 'noch nicht festgelegt';
-    $('#s-keys-sum').textContent = [settings.tomtom ? 'TomTom ✓' : 'TomTom –', settings.aiKey ? 'KI ✓' : 'KI –'].join(' · ');
+    $('#s-keys-sum').textContent = [settings.here ? 'HERE ✓' : 'HERE –', settings.tomtom ? 'TomTom ✓' : 'TomTom –', settings.aiKey ? 'KI ✓' : 'KI –'].join(' · ');
     sPage('main');
     $('#settings').hidden = false;
   }
@@ -2522,8 +2527,9 @@
     settings.autoPace = $('#s-autopace').checked;
     if ($('#s-area [data-place]')) { const a = readAreaChips($('#s-area')); settings.area = a; settings.areaAuto = false; settings.areaOk = true; }
     settings.tomtom = $('#s-tomtom').value.trim();
+    settings.here = $('#s-here').value.trim();
     settings.aiKey = $('#s-ai-key').value.trim();
-    Geo.setKeys({ tomtom: settings.tomtom });
+    Geo.setKeys({ tomtom: settings.tomtom, here: settings.here });
     applyArea(); Map_.setTiles(); renderAreaCard();
     persist(); closeSettings(); renderStops(); renderResult();
     loadIndex(false);
@@ -2538,6 +2544,13 @@
     note.textContent = 'Teste …';
     try { const m = await AI.test(k); note.textContent = `✓ Schlüssel funktioniert (${m}). Mit „Speichern“ übernehmen.`; }
     catch (e) { note.textContent = 'Schlüssel wird nicht angenommen: ' + e.message; }
+  };
+  $('#s-here-test').onclick = async () => {
+    const k = $('#s-here').value.trim(), note = $('#s-here-note');
+    if (!k) { note.textContent = 'Erst einen Schlüssel eintragen.'; return; }
+    note.textContent = 'Teste …';
+    try { await Geo.hereTest(k); note.textContent = '✓ Schlüssel funktioniert. Mit „Speichern“ übernehmen.'; }
+    catch (e) { note.textContent = 'Schlüssel wird nicht angenommen (' + e.message + ').'; }
   };
   $('#s-tomtom-test').onclick = async () => {
     const k = $('#s-tomtom').value.trim(), note = $('#s-tomtom-note');
@@ -2555,7 +2568,7 @@
   /* ---------- Start ---------- */
   function startApp() {
     $('#app').hidden = false;
-    Geo.setKeys({ tomtom: settings.tomtom });
+    Geo.setKeys({ tomtom: settings.tomtom, here: settings.here });
     applyArea(); renderAreaCard();
     if (imported) setTimeout(() => toast('Einrichtung übernommen – gleiche Einstellungen wie auf dem anderen Gerät', 4500), 400);
     stops.forEach(s => { delete s.busy; seenIds.add(s.id); });

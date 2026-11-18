@@ -129,8 +129,27 @@
 
   /* ---------- TomTom (optional, eigener Schlüssel) ----------
      Genauere Hausnummern; wird zuerst gefragt, wenn ein Schlüssel hinterlegt ist. */
-  let ttKey = '';
-  const setKeys = k => { ttKey = (k && k.tomtom || '').trim(); };
+  let ttKey = '', hereKey = '';
+  const setKeys = k => { ttKey = (k && k.tomtom || '').trim(); hereKey = (k && k.here || '').trim(); };
+  /* HERE (optional, eigener Schlüssel von platform.here.com) – wird vor TomTom gefragt */
+  async function here(q, bias, { limit = 5, signal } = {}) {
+    if (!hereKey) return [];
+    const u = new URL('https://geocode.search.hereapi.com/v1/geocode');
+    u.searchParams.set('q', q); u.searchParams.set('in', 'countryCode:DEU'); u.searchParams.set('lang', 'de');
+    u.searchParams.set('limit', String(limit)); u.searchParams.set('apiKey', hereKey);
+    if (bias) u.searchParams.set('at', bias.lat + ',' + bias.lon);
+    const r = await fetch(u, { signal: signal || AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error('HERE ' + r.status);
+    return ((await r.json()).items || []).filter(x => x.address && x.position).map(x => {
+      const a = x.address, city = a.city || a.district || '';
+      const line1 = [a.street, a.houseNumber].filter(Boolean).join(' ');
+      return { lat: x.position.lat, lon: x.position.lng, street: a.street || '', hn: (a.houseNumber || '').toLowerCase().replace(/\s/g, ''),
+        label: [line1, [a.postalCode, city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || a.label, city, postcode: a.postalCode || '',
+        km: bias ? haversine(bias.lat, bias.lon, x.position.lat, x.position.lng) / 1000 : null };
+    });
+  }
+  /** Bezahlter/genauer Dienst mit eigenem Schlüssel: HERE, sonst TomTom */
+  const pro = (q, bias, opt) => hereKey ? here(q, bias, opt) : tomtom(q, bias, opt);
   async function tomtom(q, bias, { limit = 5, typeahead = false, signal } = {}) {
     if (!ttKey) return [];
     const u = new URL(`https://api.tomtom.com/search/2/${typeahead ? 'search' : 'geocode'}/${encodeURIComponent(q)}.json`);
@@ -152,7 +171,7 @@
     const parsed = parseQuery(query), want = norm(parsed.street);
     const hasPlace = /,/.test(query) || parsed.plz;
     const q = !hasPlace && depot && depot.city ? query + ', ' + depot.city : query;
-    const list = await tomtom(q, depot, { limit: 5 }).catch(() => []);
+    const list = await pro(q, depot, { limit: 5 }).catch(() => []);
     const ok = list.filter(x => !want || norm(x.street) === want || norm(x.street).includes(want))
       .filter(x => x.km === null || x.km < 60)
       .sort((a, b) => ((b.hn === parsed.housenumber) - (a.hn === parsed.housenumber)) || (a.km || 0) - (b.km || 0));
@@ -181,7 +200,7 @@
     const bias = depot ? { lat: depot.lat, lon: depot.lon } : null;
     const parsed = parseQuery(query);
     const hasPlace = /,/.test(query) || parsed.plz;
-    if (ttKey) {
+    if (ttKey || hereKey) {
       const t = await tomtomGeocode(query, depot);
       if (t && !t.approx) { cache[key] = t; saveCache(); return t; }
     }
@@ -226,9 +245,9 @@
   async function suggest(q, depot) {
     if (suggestCtl) suggestCtl.abort();
     suggestCtl = new AbortController();
-    if (ttKey) {
+    if (ttKey || hereKey) {
       const parsed = parseQuery(q);
-      const list = await tomtom(q, depot, { limit: 8, typeahead: true, signal: suggestCtl.signal }).catch(() => []);
+      const list = await pro(q, depot, { limit: 8, typeahead: true, signal: suggestCtl.signal }).catch(() => []);
       const seen = new Set();
       const out = list.filter(x => x.label && !seen.has(x.label) && seen.add(x.label)).slice(0, 5).map(x => Object.assign(x, {
         title: x.label.split(',')[0], sub: x.label.split(',').slice(1).join(',').trim(), exact: !!x.hn || !parsed.housenumber }));
@@ -730,5 +749,5 @@
     }
   }
 
-  window.Geo = { setKeys, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetNames: () => streets ? streets.list.map(x => ({ n: x.n, p: x.p, a: inArea(x) })).sort((a, b) => b.a - a.a) : [], streetAuto, similarStreets, streetPlaces, placesInCircle, streetsCover, loadAddresses, addrCount, addrLookup, addrPlaces, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
+  window.Geo = { setKeys, hereTest: k => { const o = hereKey; hereKey = k; return here('Berlin', null, { limit: 1 }).finally(() => { hereKey = o; }); }, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetNames: () => streets ? streets.list.map(x => ({ n: x.n, p: x.p, a: inArea(x) })).sort((a, b) => b.a - a.a) : [], streetAuto, similarStreets, streetPlaces, placesInCircle, streetsCover, loadAddresses, addrCount, addrLookup, addrPlaces, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
 })();
