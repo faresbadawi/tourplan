@@ -2197,6 +2197,7 @@
     const walkM = previous && s && Number.isFinite(s.lat) && Number.isFinite(s.lon) ? Math.round(Geo.haversine(previous.lat, previous.lon, s.lat, s.lon)) : Infinity;
     const walkHint = previous && walkM <= 300 ? `<span class="mb-walk">${walkM} m vom letzten Stopp · zu Fuß prüfen</span>` : '';
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
+    bar.innerHTML = `
       <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}
       <button class="mb-info" id="mb-info"><span class="mb-street">${ICON.road}<b>${esc(street)}</b>${house ? `<em class="mb-hn">${esc(house)}</em>` : ''}</span><span>${esc(sub)}</span>${walkHint}</button></div>
       <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen" title="Überspringen">${ICON.skip}</button>
