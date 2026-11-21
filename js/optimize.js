@@ -9,6 +9,13 @@
     return c;
   }
 
+  // Soft reward for putting stops that can be delivered during one parking stop next to each other.
+  function routeScore(t, D, roundtrip, affinity) {
+    let score = tourCost(t, D, roundtrip);
+    if (affinity) for (let i = 0; i + 1 < t.length; i++) score -= affinity[t[i]][t[i + 1]] || 0;
+    return score;
+  }
+
   function nearestNeighbor(n, D, first) {
     const left = new Set(); for (let i = 1; i <= n; i++) left.add(i);
     const t = [];
@@ -22,8 +29,8 @@
     return t;
   }
 
-  function improve(t, D, roundtrip, deadline) {
-    let best = tourCost(t, D, roundtrip);
+  function improve(t, D, roundtrip, deadline, affinity) {
+    let best = routeScore(t, D, roundtrip, affinity);
     let improved = true;
     while (improved && performance.now() < deadline) {
       improved = false;
@@ -31,7 +38,7 @@
       for (let i = 0; i < t.length - 1 && !improved; i++) {
         for (let k = i + 1; k < t.length; k++) {
           const cand = t.slice(0, i).concat(t.slice(i, k + 1).reverse(), t.slice(k + 1));
-          const c = tourCost(cand, D, roundtrip);
+          const c = routeScore(cand, D, roundtrip, affinity);
           if (c < best - 0.5) { t = cand; best = c; improved = true; break; }
         }
       }
@@ -46,18 +53,18 @@
             if (p === i) continue;
             for (const s of [seg, seg.slice().reverse()]) {
               const cand = rest.slice(0, p).concat(s, rest.slice(p));
-              const c = tourCost(cand, D, roundtrip);
+              const c = routeScore(cand, D, roundtrip, affinity);
               if (c < best - 0.5) { t = cand; best = c; improved = true; break outer; }
             }
           }
         }
       }
     }
-    return { t, cost: best };
+    return { t, cost: tourCost(t, D, roundtrip), score: best };
   }
 
   /** D: Matrix (n+1)×(n+1), 0 = Depot. Liefert Reihenfolge der Knoten 1..n. */
-  function solve(D, roundtrip = true, budgetMs = 1500) {
+  function solve(D, roundtrip = true, budgetMs = 1500, affinity = null) {
     const n = D.length - 1;
     if (n <= 0) return { order: [], cost: 0 };
     if (n === 1) return { order: [1], cost: tourCost([1], D, roundtrip) };
@@ -68,8 +75,8 @@
     let best = null;
     for (const f of [null, ...firsts]) {
       if (performance.now() > deadline && best) break;
-      const r = improve(nearestNeighbor(n, D, f), D, roundtrip, deadline);
-      if (!best || r.cost < best.cost) best = r;
+      const r = improve(nearestNeighbor(n, D, f), D, roundtrip, deadline, affinity);
+      if (!best || r.score < best.score) best = r;
     }
     return { order: best.t, cost: best.cost };
   }

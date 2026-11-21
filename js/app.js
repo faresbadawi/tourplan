@@ -1338,6 +1338,22 @@
      reopt = true: offene Stopps neu sortieren (erledigte bleiben vorn stehen)
      reopt = false: Reihenfolge behalten, nur Strecke neu berechnen (nach Löschen/Bearbeiten) */
   let planning = false, planAgain = null, gpsNote = '';
+  function stopAffinity(points) {
+    const A = Array.from({ length: points.length }, () => new Array(points.length).fill(0));
+    const info = points.map(s => {
+      if (!s || !s.query) return null;
+      const p = Geo.parseQuery(s.query);
+      return { street: Geo.norm(p.street), city: Geo.norm(s.city || p.city.split(/[0-9,]/)[0]) };
+    });
+    for (let i = 1; i < points.length; i++) for (let j = 1; j < points.length; j++) {
+      if (i === j || !info[i] || !info[j] || !info[i].street || info[i].street !== info[j].street) continue;
+      if (info[i].city && info[j].city && info[i].city !== info[j].city) continue;
+      const d = Geo.haversine(points[i].lat, points[i].lon, points[j].lat, points[j].lon);
+      // Nearby addresses on the same street are often easiest to deliver in one parking stop.
+      if (d < 450) A[i][j] = Math.round(210 * (1 - d / 450));
+    }
+    return A;
+  }
   function whereAmI(timeout = 6000) {                          // aktuelle Position (frisch genug oder kurz nachfragen)
     if (Me.pos && Date.now() - (Me.pos.t || 0) < 90000) return Promise.resolve(Me.pos);
     if (!navigator.geolocation) return Promise.resolve(null);
@@ -1365,6 +1381,7 @@
         const start = doneStops.length ? doneStops[doneStops.length - 1] : depot;
         const nodes = [start, ...base, ...fresh], dIdx = nodes.length;
         const M = await Geo.matrix([...nodes, depot]);
+        const affinity = stopAffinity([...nodes, depot]);
         source = M.source;
         const d = (a, b) => M.dur[a][b];
         const seq = base.map((_, i) => i + 1);
@@ -1372,7 +1389,8 @@
           const f = base.length + 1 + k; let bestP = seq.length, bestC = Infinity;
           for (let q = 0; q <= seq.length; q++) {
             const a = q === 0 ? 0 : seq[q - 1], nx = q === seq.length ? (settings.roundtrip ? dIdx : -1) : seq[q];
-            const c = d(a, f) + (nx === -1 ? 0 : d(f, nx) - d(a, nx));
+            const c = d(a, f) + (nx === -1 ? 0 : d(f, nx) - d(a, nx))
+              - affinity[a][f] - (nx === -1 ? 0 : affinity[f][nx]) + (nx === -1 ? 0 : affinity[a][nx]);
             if (c < bestC - 1e-6) { bestC = c; bestP = q; }
           }
           seq.splice(bestP, 0, f);
@@ -1390,9 +1408,10 @@
         const M = await Geo.matrix(pts);
         const n = rest.length;
         const D = Array.from({ length: n + 1 }, (_, i) => M.dur[i].slice(0, n + 1));
+        const affinity = stopAffinity(pts);
         if (backIdx) for (let i = 1; i <= n; i++) D[i][0] = M.dur[i][backIdx];
         const naive = Optimize.tourCost(rest.map((_, i) => i + 1), D, settings.roundtrip);
-        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 6000 : n > 80 ? 4000 : 2500);
+        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 6000 : n > 80 ? 4000 : 2500, affinity);
         rest = order.map(i => rest[i - 1]);
         source = M.source;
         if (first) saving = Math.max(0, naive - cost);
