@@ -190,6 +190,7 @@
             <div id="map" class="map"></div>
             <button class="map-tap" id="map-tap" aria-label="Karte im Vollbild öffnen"></button>
             <div class="map-empty" id="map-empty"><p>Neue Adressen erscheinen hier als Punkte</p></div>
+            <div class="map-progress" id="map-progress" hidden aria-live="polite"></div>
             <button class="map-fab close" id="map-close" aria-label="Vollbild schließen" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
             <button class="map-fab full" id="map-full" aria-label="Vollbild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
             <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
@@ -240,6 +241,11 @@
         <h3 class="mini">Orte in deinem Gebiet</h3>
         <p class="sheet-note" id="s-area-note">Antippen zum An- oder Abwählen. Straßen dort werden bevorzugt, Adressen außerhalb werden markiert.</p>
         <div class="area-chips" id="s-area"></div>
+        <h3 class="mini">Zustellstraßen</h3>
+        <p class="sheet-note">Wähle häufige oder gleichnamige Straßen mit ihrem Ort aus. Das hilft bei der Adresszuordnung und bündelt Stopps in Sackgassen. Andere Adressen bleiben möglich.</p>
+        <label class="field"><span>Straße suchen</span><input id="s-street-search" type="search" autocomplete="off" placeholder="z. B. Hauptstraße"></label>
+        <div class="area-street-suggest" id="s-street-suggest" hidden></div>
+        <div class="area-streets-selected" id="s-streets-selected"></div>
       </div>
 
       <div class="s-page" data-page="route" data-title="Tour &amp; Navigation" hidden>

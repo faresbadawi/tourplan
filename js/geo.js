@@ -3,7 +3,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const OSRM = 'https://router.project-osrm.org';
-  const CACHE_KEY = 'tp.geocache.v3';
+  const CACHE_KEY = 'tp.geocache.v4';
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
   let cache = {};
@@ -172,7 +172,11 @@
     const hasPlace = /,/.test(query) || parsed.plz;
     const q = !hasPlace && depot && depot.city ? query + ', ' + depot.city : query;
     const list = await pro(q, depot, { limit: 5 }).catch(() => []);
+    const wantedPlace = norm(parsed.city.replace(/^\d{5}\s*/, ''));
     const ok = list.filter(x => !want || norm(x.street) === want || norm(x.street).includes(want))
+      // TomTom kann trotz Ortsangabe gleichnamige Straßen aus Nachbarorten liefern.
+      .filter(x => !wantedPlace || (x.city && (norm(x.city).includes(wantedPlace) || wantedPlace.includes(norm(x.city)))))
+      .filter(x => !parsed.plz || x.postcode === parsed.plz)
       .filter(x => x.km === null || x.km < 60)
       .sort((a, b) => ((b.hn === parsed.housenumber) - (a.hn === parsed.housenumber)) || (a.km || 0) - (b.km || 0));
     const b = ok[0];
@@ -209,6 +213,11 @@
     const jobs = [photon(query, bias).catch(() => [])];
     if (!hasPlace && depot && depot.city) jobs.unshift(photon(query + ' ' + depot.city, bias).catch(() => []));
     (await Promise.all(jobs)).forEach(f => { feats = feats.concat(f); });
+    if (parsed.city || parsed.plz) feats = feats.filter(f => {
+      const p = f.properties || {}, places = [p.city, p.town, p.village, p.district, p.locality, p.county].filter(Boolean).map(norm);
+      const city = norm(parsed.city);
+      return (!city || places.some(x => x === city || x.includes(city) || city.includes(x))) && (!parsed.plz || p.postcode === parsed.plz);
+    });
 
     let best = null, bestScore = -Infinity;
     for (const f of feats) {

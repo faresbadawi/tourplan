@@ -16,14 +16,17 @@
     return score;
   }
 
-  function nearestNeighbor(n, D, first) {
+  function nearestNeighbor(n, D, first, affinity) {
     const left = new Set(); for (let i = 1; i <= n; i++) left.add(i);
     const t = [];
     let cur = 0;
     if (first) { t.push(first); left.delete(first); cur = first; }
     while (left.size) {
       let best = -1, bd = Infinity;
-      for (const j of left) if (D[cur][j] < bd) { bd = D[cur][j]; best = j; }
+      for (const j of left) {
+        const c = D[cur][j] - (cur && affinity ? affinity[cur][j] || 0 : 0);
+        if (c < bd) { bd = c; best = j; }
+      }
       t.push(best); left.delete(best); cur = best;
     }
     return t;
@@ -75,7 +78,7 @@
     let best = null;
     for (const f of [null, ...firsts]) {
       if (performance.now() > deadline && best) break;
-      const r = improve(nearestNeighbor(n, D, f), D, roundtrip, deadline, affinity);
+      const r = improve(nearestNeighbor(n, D, f, affinity), D, roundtrip, deadline, affinity);
       if (!best || r.score < best.score) best = r;
     }
     return { order: best.t, cost: best.cost };

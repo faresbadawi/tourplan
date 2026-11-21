@@ -17,8 +17,8 @@ Web-App (PWA) für einen DHL-Zusteller (Galaxy Z Flip 6, iPad). Adressen eingebe
 |---|---|---|
 | `index.html` | ~380 | Oberfläche (Einrichtung, Kopfleiste, Karten-Slots, Dialoge) |
 | `js/app.js` | ~2.500 | Gesamte App-Logik und Oberfläche (eine große IIFE) |
-| `js/geo.js` | ~730 | Adresssuche (Photon/Nominatim/TomTom), Straßenverzeichnis und Hausnummern (Overpass), Routing/Matrix (OSRM), Korrekturvorschläge |
-| `js/optimize.js` | ~80 | Tourenoptimierung: Nächster-Nachbar + 2-opt + Or-opt |
+| `js/geo.js` | ~730 | Adresssuche (Photon/Nominatim/TomTom), Straßenverzeichnis und Hausnummern (Overpass), Routing/Matrix (OSRM), Korrekturvorschläge; Ortsangaben werden gegen Geocoder-Treffer geprüft |
+| `js/optimize.js` | ~90 | Tourenoptimierung: Nächster-Nachbar + 2-opt + Or-opt, mit Bonus für nahe Fußgruppen und zusammenhängende Zustellstraßen |
 | `js/speech.js` | ~200 | Diktat, Zerlegung gesprochener Adresslisten, Zeilen-Parser (`Hauptstraße 12 - 3`) |
 | `js/ai.js` | ~70 | Optionale KI-Texterkennung (Groq/Gemini, Schlüssel vom Nutzer) |
 | `css/app.css` | ~1.200 | Gesamtes Design (hell, dunkel, Farbwahl) |
@@ -27,7 +27,7 @@ Web-App (PWA) für einen DHL-Zusteller (Galaxy Z Flip 6, iPad). Adressen eingebe
 
 ## 3. Datenmodell (localStorage)
 
-- `tp.settings`: Einstellungen (`name`, `depot {name,label,lat,lon}`, `nav`, `theme`, `accent`, `roundtrip`, `stopMin`, `pace {sec,n}`, `autoPace`, `mapStyle`, `mapMode`, `region {lat,lon,r,vec}`, `area[]`, `vehicle`, `vehAccess`, `zoneN`, `zoneCuts`, `zoneAcc`, `zoneSplit`, `vehCustom`, `meOff`, …)
+- `tp.settings`: Einstellungen (`name`, `depot {name,label,lat,lon}`, `nav`, `theme`, `accent`, `roundtrip`, `stopMin`, `pace {sec,n}`, `autoPace`, `mapStyle`, `mapMode`, `region {lat,lon,r,vec}`, `area[]`, `deliveryStreets[{street,place}]`, `vehicle`, `vehAccess`, `zoneN`, `zoneCuts`, `zoneAcc`, `zoneSplit`, `vehCustom`, `meOff`, …)
 - `tp.stops`: `[{id, query, pk, status:'ok'|'pending'|'err'|'ask', label, lat, lon, approx, outside, alts, ask}]`
 - `tp.route`: `{order[], legs[{dur,dist}], geometry[[lat,lon]], done{id: true|'skip'}, doneAt{id: ms}, saving, created, roundtrip, source}`
 - `tp.history`: beendete Touren; `tp.vphotos`: eigene Fahrzeugfotos (verkleinert); `tp.vstyle.l`: gemerkter Kartenstil

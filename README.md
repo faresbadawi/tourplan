@@ -6,8 +6,9 @@ Web-App (PWA) für Zusteller: Adressen tippen, einfügen oder diktieren, beste R
 
 - **Einrichtung:** Name, Depot/Zustellstützpunkt (Start und Ende jeder Tour), Navi-App, Hell/Dunkel.
 - **Eingabe:** eine Adresse pro Zeile; ohne Ort wird rund ums Depot gesucht. Diktat auf Deutsch („nächste“ trennt Adressen), intelligente Aufbereitung (Zahlwörter, „Str.“, „12 a“ → „12a“).
-- **Optimierung:** echte Fahrzeiten (OSRM), Nächster-Nachbar + 2-opt + Or-opt; nahe Stopps derselben Straße werden für eine gemeinsame Zustellrunde bevorzugt; Rundtour oder offenes Ende.
-- **Unterwegs:** Daumen-Leiste mit nächstem Stopp, „Erledigt“, Ankunftszeiten, Google-Maps-Gesamtroute (in 10er-Teilen), Liste teilen.
+- **Optimierung:** echte Fahrzeiten (OSRM), Nächster-Nachbar + 2-opt + Or-opt; nahe Stopps werden zu Fußgruppen gebündelt, Zustellstraßen und Sackgassen stärker zusammengehalten; Rundtour oder offenes Ende.
+- **Unterwegs:** Fortschrittsringe für Pakete und Stopps auf der Vollbildkarte, hervorgehobene Straße/Hausnummer, Hinweis auf nahe Fußwege, „Erledigt“, Ankunftszeiten, Google-Maps-Gesamtroute (in 10er-Teilen), Liste teilen.
+- **Zustellgebiet:** Orte und einzelne Straßen lassen sich auswählen; gleichnamige Straßen werden mit Ort gespeichert und bei der Eingabe eindeutig zugeordnet.
 - Optimiert für Handy (z. B. Galaxy Z Flip 6, auch Außendisplay), iPad und Desktop.
 
 Dienste ohne API-Schlüssel: Photon/Nominatim (Adresssuche), OSRM (Routing), OpenStreetMap (Karte). Alle Daten bleiben im Browser (localStorage).

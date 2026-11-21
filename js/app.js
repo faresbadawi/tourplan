@@ -5,7 +5,7 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   /* ---------- Zustand ---------- */
-  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'vec', area: null, tomtom: '', here: '', meIcon: 'arrow' };
+  const DEFAULTS = { name: '', depot: null, nav: 'waze', theme: 'auto', roundtrip: true, smart: true, stopMin: 2, sound: true, pois: true, accent: 'blue', mapStyle: 'vec', area: null, deliveryStreets: [], tomtom: '', here: '', meIcon: 'arrow' };
   const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
@@ -786,20 +786,30 @@
       let ask = null;
       if (!Geo.hasPlaceIn(query)) {                 // Ort aus Auswahl, Gelerntem oder Straßenverzeichnis ergänzen
         const key = Geo.norm(Geo.parseQuery(query).street);
+        const pl = Geo.streetPlaces(query, settings.depot);
+        const manual = (settings.deliveryStreets || []).filter(x => Geo.norm(x.street) === key);
+        const selected = manual.filter(x => !settings.area?.length || settings.area.some(a => Geo.norm(a) === Geo.norm(x.place)));
+        const choices = selected.length ? selected : manual;
+        const configured = choices.length ? pl.filter(p => choices.some(x => Geo.norm(x.place) === Geo.norm(p.place))) : [];
+        const withNo = Geo.addrPlaces(query);   // bekannte Hausnummer kann bei gleichnamigen Straßen den Ort eindeutig machen
+        const narrowed = withNo && withNo.length ? pl.filter(p => withNo.some(c => Geo.norm(c) === Geo.norm(p.place))) : pl;
+        const home = narrowed.filter(p => p.inArea);
+        const learned = (settings.learn || {})[key];
+        const pickedCity = pickedPlace.get(key);
         const st = Geo.streetLookup(query, settings.depot);
-        const place = pickedPlace.get(key) || (settings.learn || {})[key] || (st && st.sure ? st.p : '');
+        let place = '';
+        if (pickedCity) place = pickedCity;
+        else if (configured.length === 1) place = configured[0].place;
+        else if (configured.length > 1) ask = configured.slice(0, 6);
+        else if (choices.length) ask = choices.slice(0, 6).map(x => ({ place: x.place, inArea: !settings.area?.length || settings.area.some(a => Geo.norm(a) === Geo.norm(x.place)) }));
+        else if (narrowed.length === 1) place = narrowed[0].place;
+        else if (learned && home.some(p => Geo.norm(p.place) === Geo.norm(learned))) place = learned;
+        else if (home.length === 1) place = home[0].place;
+        else if (home.length > 1) ask = home.slice(0, 6); // nie stillschweigend die falsche gleichnamige Straße nehmen
+        else if (learned && pl.some(p => Geo.norm(p.place) === Geo.norm(learned))) place = learned;
+        else if (st && st.sure) place = st.p;
+        else if (narrowed.length > 1) ask = narrowed.slice(0, 6);
         if (place) query += ', ' + place;
-        else {                                      // Straße gibt es in mehreren Orten → einmal fragen, dann merken
-          const pl = Geo.streetPlaces(query, settings.depot);
-          if (pl.length > 1) {
-            const withNo = Geo.addrPlaces(query);   // Hausnummer gibt es nur in einem davon → ohne Frage nehmen
-            const f = withNo && withNo.length ? pl.filter(p => withNo.includes(p.place)) : pl;
-            const home = f.filter(p => p.inArea);
-            if (f.length === 1) query += ', ' + f[0].place;
-            else if (home.length === 1) query += ', ' + home[0].place;          // nur eine davon im Zustellgebiet → die
-            else ask = (home.length > 1 ? home : f).slice(0, 5);
-          }
-        }
       }
       const ex = known.get(query.toLowerCase());
       if (ex) { if (pk) ex.pk = (ex.pk || 0) + pk; continue; }      // gleiche Adresse: Pakete zusammenzählen
@@ -1343,17 +1353,24 @@
   let planning = false, planAgain = null, gpsNote = '';
   function stopAffinity(points) {
     const A = Array.from({ length: points.length }, () => new Array(points.length).fill(0));
+    const preferred = new Set((settings.deliveryStreets || []).map(x => Geo.norm(x.street) + '|' + Geo.norm(x.place)));
     const info = points.map(s => {
       if (!s || !s.query) return null;
       const p = Geo.parseQuery(s.query);
-      return { street: Geo.norm(p.street), city: Geo.norm(s.city || p.city.split(/[0-9,]/)[0]) };
+      const street = Geo.norm(p.street), city = Geo.norm(s.city || p.city.split(/[0-9,]/)[0]);
+      return { street, city, preferred: preferred.has(street + '|' + city) };
     });
     for (let i = 1; i < points.length; i++) for (let j = 1; j < points.length; j++) {
-      if (i === j || !info[i] || !info[j] || !info[i].street || info[i].street !== info[j].street) continue;
+      if (i === j || !info[i] || !info[j]) continue;
       if (info[i].city && info[j].city && info[i].city !== info[j].city) continue;
       const d = Geo.haversine(points[i].lat, points[i].lon, points[j].lat, points[j].lon);
-      // Nearby addresses on the same street are often easiest to deliver in one parking stop.
-      if (d < 450) A[i][j] = Math.round(210 * (1 - d / 450));
+      // Close stops form a walkable parking group, even when a road barrier makes the car route long.
+      if (d < 300) A[i][j] = Math.round(175 * (1 - d / 300));
+      if (info[i].street && info[i].street === info[j].street) {
+        // Sweep a street or cul-de-sac once; an explicitly selected delivery street gets more weight.
+        const radius = info[i].preferred && info[j].preferred ? 1000 : 800;
+        if (d < radius) A[i][j] = Math.max(A[i][j], Math.round((info[i].preferred && info[j].preferred ? 360 : 300) * (1 - d / radius)));
+      }
     }
     return A;
   }
@@ -2153,21 +2170,35 @@
   /* Leiste im Kartenvollbild: nur nächster Stopp, Haken und Navigation */
   function renderMapBar() {
     const bar = $('#map-bar');
+    const progress = $('#map-progress');
     $('#map-depot').hidden = !Map_.full || !settings.depot;
-    if (!route || !Map_.full) { bar.hidden = true; return; }
+    if (!route || !Map_.full) { bar.hidden = true; progress.hidden = true; return; }
     const cur = currentIndex(), n = route.order.length;
     const s = cur !== -1 ? stopById(route.order[cur]) : settings.depot;
     const open = route.order.map(stopById).filter(x => x && !route.done[x.id]);
     const pkLeft = open.reduce((a, x) => a + (x.pk || 1), 0);
+    const pkTotal = route.order.reduce((a, id) => { const x = stopById(id); return a + (x ? x.pk || 1 : 0); }, 0);
+    const pkDone = Math.max(0, pkTotal - pkLeft);
+    const closed = n - open.length, circumference = 2 * Math.PI * 20;
+    const ring = (left, total, done, label, color) => {
+      const f = total ? Math.min(1, Math.max(0, done / total)) : 1;
+      return `<div class="mp-item"><div class="mp-circle"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="bg" cx="24" cy="24" r="20"/><circle class="fg" cx="24" cy="24" r="20" style="--progress-color:${color};stroke-dasharray:${circumference};stroke-dashoffset:${circumference * (1 - f)}"/></svg><b>${left}</b></div><small>${label} übrig</small></div>`;
+    };
+    progress.innerHTML = ring(pkLeft, pkTotal, pkDone, 'Pakete', 'var(--accent)') + ring(open.length, n, closed, 'Stopps', 'var(--ok)');
+    progress.hidden = false;
     // Straße + Hausnummer aus der Eingabe (das Label beginnt manchmal mit einem Geschäftsnamen)
-    const street = cur !== -1 ? (s.poi ? s.label.split(',')[0] : s.query.split(',')[0]) : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
+    const parsed = cur !== -1 && !s.poi ? Geo.parseQuery(s.query) : null;
+    const street = cur !== -1 ? (s.poi ? s.label.split(',')[0] : parsed.street) : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
+    const house = parsed && parsed.housenumber ? parsed.housenumber : '';
     const parts = (s.label || '').split(',').map(t => t.trim());
     const town = cur !== -1 ? (parts.find(t => /\b\d{5}\b/.test(t)) || (parts.length > 1 ? parts[parts.length - 1] : '')).replace(/\b\d{5}\b\s*/, '').trim() : '';
     const sub = cur !== -1 ? [town, fmtDur(route.legs[cur].dur), s.pk ? pkLabel(s.pk) : ''].filter(Boolean).join(' · ') : `Alle ${n} Stopps erledigt`;
+    const previous = cur > 0 ? stopById(route.order[cur - 1]) : null;
+    const walkM = previous && s && Number.isFinite(s.lat) && Number.isFinite(s.lon) ? Math.round(Geo.haversine(previous.lat, previous.lon, s.lat, s.lon)) : Infinity;
+    const walkHint = previous && walkM <= 300 ? `<span class="mb-walk">${walkM} m vom letzten Stopp · zu Fuß prüfen</span>` : '';
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
-    bar.innerHTML = `<div class="mb-stats">${ICON.box}<b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'} übrig<span>·</span><b>${open.length}</b> von ${n} Stopps offen</div>
       <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}
-      <button class="mb-info" id="mb-info"><b>${esc(street)}</b><span>${esc(sub)}</span></button></div>
+      <button class="mb-info" id="mb-info"><span class="mb-street">${ICON.road}<b>${esc(street)}</b>${house ? `<em class="mb-hn">${esc(house)}</em>` : ''}</span><span>${esc(sub)}</span>${walkHint}</button></div>
       <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen" title="Überspringen">${ICON.skip}</button>
         <button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}<span>Erledigt</span></button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}</div>`;
@@ -2457,6 +2488,29 @@
     };
   }
   const readAreaChips = el => [...el.querySelectorAll('[data-place][aria-pressed="true"]')].map(b => b.dataset.place);
+  let editingDeliveryStreets = [];
+  const deliveryStreetKey = x => Geo.norm(x.street) + '|' + Geo.norm(x.place);
+  function renderDeliveryStreets() {
+    const selected = $('#s-streets-selected'), suggest = $('#s-street-suggest');
+    selected.innerHTML = editingDeliveryStreets.length ? editingDeliveryStreets.map(x => `<button type="button" aria-label="Zustellstraße ${esc(x.street)}, ${esc(x.place)} entfernen" data-street-remove="${esc(deliveryStreetKey(x))}"><span>${esc(x.street)}</span><small>${esc(x.place)}</small></button>`).join('') : '<small class="muted">Noch keine einzelnen Straßen gespeichert.</small>';
+    const q = $('#s-street-search').value.trim();
+    if (q.length < 2) { suggest.hidden = true; suggest.innerHTML = ''; return; }
+    const chosen = new Set(editingDeliveryStreets.map(deliveryStreetKey));
+    const results = Geo.streetSuggest(q, settings.depot, 12).filter(x => !chosen.has(Geo.norm(x.street) + '|' + Geo.norm(x.place)));
+    suggest.innerHTML = results.length ? results.map(x => `<button type="button" data-street-add="${esc(x.street)}" data-street-place="${esc(x.place)}"><span>${esc(x.street)}</span><small>${esc(x.place)}${settings.area?.length && !settings.area.some(a => Geo.norm(a) === Geo.norm(x.place)) ? ' · außerhalb' : ''}</small></button>`).join('') : '<small class="muted">Keine passende Straße im gespeicherten Verzeichnis.</small>';
+    suggest.hidden = false;
+  }
+  $('#s-street-search').addEventListener('input', renderDeliveryStreets);
+  $('#s-street-suggest').addEventListener('click', e => {
+    const b = e.target.closest('[data-street-add]'); if (!b) return;
+    const x = { street: b.dataset.streetAdd, place: b.dataset.streetPlace };
+    if (!editingDeliveryStreets.some(y => deliveryStreetKey(y) === deliveryStreetKey(x))) editingDeliveryStreets.push(x);
+    $('#s-street-search').value = ''; renderDeliveryStreets();
+  });
+  $('#s-streets-selected').addEventListener('click', e => {
+    const b = e.target.closest('[data-street-remove]'); if (!b) return;
+    editingDeliveryStreets = editingDeliveryStreets.filter(x => deliveryStreetKey(x) !== b.dataset.streetRemove); renderDeliveryStreets();
+  });
   function renderAreaCard() {
     const el = $('#area-card');
     if (!settings.areaAuto || settings.areaOk || !settings.area || !settings.area.length || route) { el.innerHTML = ''; return; }
@@ -2512,12 +2566,15 @@
     $('#s-meicon').innerHTML = Object.entries(ME_ICONS).map(([k, v]) => `<button data-mi="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}">${v.name.replace('Gelber ', '')}</button>`).join('');
     $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
     renderAreaChips($('#s-area'));
+    editingDeliveryStreets = (settings.deliveryStreets || []).map(x => ({ street: x.street, place: x.place }));
+    $('#s-street-search').value = ''; renderDeliveryStreets();
     $('#s-tomtom').value = settings.tomtom || '';
     $('#s-here').value = settings.here || '';
     $('#s-ai-key').value = settings.aiKey || '';
     renderIndexInfo();
     const ar = settings.area || [];
-    $('#s-area-sum').textContent = ar.length ? ar.slice(0, 3).join(', ') + (ar.length > 3 ? ` + ${ar.length - 3} weitere` : '') : 'noch nicht festgelegt';
+    const ds = settings.deliveryStreets || [];
+    $('#s-area-sum').textContent = `${ar.length ? ar.length + ' Orte' : 'Gebiet offen'}${ds.length ? ' · ' + ds.length + ' Straßen' : ''}`;
     $('#s-keys-sum').textContent = [settings.here ? 'HERE ✓' : 'HERE –', settings.tomtom ? 'TomTom ✓' : 'TomTom –', settings.aiKey ? 'KI ✓' : 'KI –'].join(' · ');
     sPage('main');
     $('#settings').hidden = false;
@@ -2543,7 +2600,7 @@
       pendingDepot = await checkDepot(q, $('#s-depot-result')).catch(() => null);
       if (!pendingDepot) return;
     }
-    const before = JSON.stringify([settings.depot && [settings.depot.lat, settings.depot.lon], settings.roundtrip]);
+    const before = JSON.stringify([settings.depot && [settings.depot.lat, settings.depot.lon], settings.roundtrip, settings.area || [], settings.deliveryStreets || []]);
     settings.name = $('#s-name').value.trim();
     if (pendingDepot) settings.depot = Object.assign({}, pendingDepot, { query: q });
     if (settings.depot) settings.depot.name = $('#s-depot-name').value.trim() || 'Depot';
@@ -2555,6 +2612,15 @@
     settings.stopMin = Math.max(0, Math.min(30, +$('#s-stopmin').value || 0));
     settings.autoPace = $('#s-autopace').checked;
     if ($('#s-area [data-place]')) { const a = readAreaChips($('#s-area')); settings.area = a; settings.areaAuto = false; settings.areaOk = true; }
+    settings.deliveryStreets = editingDeliveryStreets.slice();
+    let matchedAddress = false;
+    stops.forEach(s => {
+      if (s.status !== 'ask') return;
+      const key = Geo.norm(Geo.parseQuery(s.query).street);
+      const options = settings.deliveryStreets.filter(x => Geo.norm(x.street) === key && (!settings.area?.length || settings.area.some(a => Geo.norm(a) === Geo.norm(x.place))));
+      if (options.length !== 1) return;
+      s.query += ', ' + options[0].place; s.status = 'pending'; delete s.ask; matchedAddress = true;
+    });
     settings.tomtom = $('#s-tomtom').value.trim();
     settings.here = $('#s-here').value.trim();
     settings.aiKey = $('#s-ai-key').value.trim();
@@ -2562,7 +2628,8 @@
     applyArea(); Map_.setTiles(); renderAreaCard();
     persist(); closeSettings(); renderStops(); renderResult();
     loadIndex(false);
-    if (JSON.stringify([settings.depot && [settings.depot.lat, settings.depot.lon], settings.roundtrip]) !== before && route) { toast('Gespeichert – Route wird neu berechnet'); plan(true); }
+    if (matchedAddress) runGeocoding();
+    if (JSON.stringify([settings.depot && [settings.depot.lat, settings.depot.lon], settings.roundtrip, settings.area || [], settings.deliveryStreets || []]) !== before && route) { toast('Gespeichert – Route wird neu berechnet'); plan(true); }
     else { toast('Gespeichert'); Pois.key = ''; Pois.refresh(); }
   };
   $('#s-transfer').onclick = shareSetup;
