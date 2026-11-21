@@ -492,12 +492,15 @@
           const cls = route.done[id] === 'skip' ? 'done skipped' : route.done[id] ? 'done' : (i === cur ? 'current' : '');
           const pk = s.pk || 1;
           const parts = s.label.split(','), street = parts[0], town = parts.slice(1, 3).join(',').replace(/\b\d{5}\b\s*/, '').trim();
-          const zi = route.done[id] ? null : zoneIdx(id), zb = zi != null ? `<i class="pz" style="--zc:${ZONE_COLORS[zi]}">${ZONE_LETTERS[zi]}</i>` : '';
-          const mk = this.pin(s, i + 1 + zb, cls).bindPopup(`<div class="pin-pop">
+          const zi = route.done[id] ? null : zoneIdx(id);
+          const badges = `<i class="ppk" title="${pk} Paket${pk === 1 ? '' : 'e'}">${pk}</i>${zi != null ? `<i class="pz" style="--zc:${ZONE_COLORS[zi]}" title="Bereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</i>` : ''}`;
+          const mk = this.pin(s, i + 1 + badges, cls).bindPopup(`<div class="pin-pop">
             <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
             <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span>${zi != null ? `<span class="pp-zone" style="--zc:${ZONE_COLORS[zi]}">Bereich ${ZONE_LETTERS[zi]}</span>` : ''}</div>
             <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button><button type="button" data-pin-skip="${id}">Überspringen</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
-            { closeButton: false, offset: [0, -20], className: 'pin-popup', autoPanPadding: [24, 120], maxWidth: 240, minWidth: 220 })
+            { closeButton: false, offset: [0, -14], className: 'pin-popup',
+              autoPanPaddingTopLeft: [12, this.full ? 76 : 12],
+              autoPanPaddingBottomRight: [12, this.full && !wide() ? 188 : 16], maxWidth: 224, minWidth: 204 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
           if (this.popId === id) this.reopen = mk;
           this.pinEls[id] = mk.getElement() && mk.getElement().firstElementChild;

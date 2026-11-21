@@ -1215,7 +1215,9 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 .pin { position: relative; }
 .pin .pz { position: absolute; top: -9px; right: -11px; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 6px; display: grid; place-items: center;
   font: 800 11px/1 var(--sans); font-style: normal; color: #fff; background: var(--zc); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
-.pin.current .pz { transform: scale(.85); }
+.pin .ppk { position: absolute; top: -9px; left: -11px; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 6px; display: grid; place-items: center;
+  font: 800 10px/1 var(--sans); font-style: normal; color: var(--text); background: var(--surface); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.pin.current .pz, .pin.current .ppk { transform: scale(.85); }
 .map-bar .mb-zone { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
   background: var(--zc); border: 2.5px solid #fff; color: #fff; font-size: 17px; font-weight: 800; line-height: 1; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .pp-pk .pp-zone { margin-left: auto; padding: 6px 10px; border-radius: 10px; background: var(--zc); color: #fff; font-weight: 800; font-size: 15px; }
@@ -1237,3 +1239,18 @@ button.vbtn { background: var(--surface-2); color: var(--text); }
 .map-wrap:not(.full) .map-fab.depot { display: none; }
 body.map-full .map-wrap.full .poi-chip { bottom: calc(190px + env(safe-area-inset-bottom)) !important; }
 body.map-full .map-wrap.full .leaflet-bottom { bottom: calc(182px + env(safe-area-inset-bottom)) !important; }
+
+/* Station-Pop-up: kompaktere Aktionen und klare Paket-/Bereichsmarken */
+.pin-popup .leaflet-popup-content { width: 204px !important; }
+.pin-pop { gap: 9px; padding: 11px; }
+.pp-head { gap: 8px; }
+.pp-n { width: 30px; height: 30px; border-radius: 10px; font-size: 14px; }
+.pp-adr b { font-size: 14px; }
+.pp-adr small { font-size: 12px; }
+.pp-pk { gap: 8px; padding: 8px 10px; border-radius: 13px; }
+.pp-pk svg { width: 26px; height: 26px; }
+.pp-pk b { font-size: 30px; }
+.pp-pk span { font-size: 13px; }
+.pp-pk .pp-zone { padding: 5px 8px; border-radius: 8px; font-size: 13px; }
+.pp-act { gap: 6px; }
+.pp-act button { min-height: 34px; padding: 7px 8px; border-radius: 9px; font-size: 12.5px; }
