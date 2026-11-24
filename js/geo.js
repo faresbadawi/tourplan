@@ -453,6 +453,33 @@
   let area = new Set();
   const setArea = names => { area = new Set((names || []).map(norm)); };
   const inArea = x => !area.size || area.has(norm(x.p));
+  /* Eigene Straßenliste (z. B. vom Zustellstützpunkt): nur diese Straßen werden gefahren → stärkster Hinweis bei Korrekturen */
+  let listNames = new Set(), listPairs = new Set(), listPlaced = new Set();
+  const setStreetList = l => {
+    l = (l || []).filter(x => x && x.street);
+    listNames = new Set(l.map(x => norm(x.street)));
+    listPairs = new Set(l.filter(x => x.place).map(x => norm(x.street) + '|' + norm(x.place)));
+    listPlaced = new Set(l.filter(x => x.place).map(x => norm(x.street)));
+  };
+  // Straße steht in der Liste – mit Ort, falls dort einer angegeben ist
+  const inList = x => listNames.has(x.k) && (!listPlaced.has(x.k) || listPairs.has(x.k + '|' + norm(x.p)));
+  /** Straßennamen aus einer eingefügten Liste dem Verzeichnis zuordnen → [{name, hits:[{street, place, inArea}]}] */
+  function matchStreetNames(names) {
+    return names.map(raw => {
+      const name = raw.replace(/\s+/g, ' ').trim(); if (!name) return null;
+      const [st, pl] = name.split(',').map(t => t.trim());
+      const want = norm(parseQuery(st).street || st);
+      let hits = streets ? streets.list.filter(x => x.k === want) : [];
+      if (!hits.length && streets && want.length >= 5) {            // Tippfehler in der Liste: genau eine sehr ähnliche Straße
+        const max = want.length >= 11 ? 2 : 1, near = streets.list.filter(x => lev(want, x.k, max) <= max);
+        if (new Set(near.map(x => x.k)).size === 1) hits = near;
+      }
+      if (pl) { const f = hits.filter(x => placeHit(x, pl)); if (f.length) hits = f; }
+      const seen = new Set(), out = [];
+      for (const x of hits) { const k = x.p; if (seen.has(k)) continue; seen.add(k); out.push({ street: x.n, place: x.p, inArea: inArea(x) }); }
+      return { name: st, place: pl || '', hits: out };
+    }).filter(Boolean);
+  }
   const nearest = (lat, lon) => { let b = null, bd = Infinity; for (const x of streets ? streets.list : []) { const d = haversine(lat, lon, x.lat, x.lon); if (d < bd) { bd = d; b = x; } } return b; };
   /** Ort, in dem ein Punkt liegt (Ort der nächstgelegenen Straße). */
   const placeAt = (lat, lon) => { const x = nearest(lat, lon); return x ? x.p : ''; };
@@ -487,6 +514,7 @@
       if (rank < 0) continue;
       if (parsed.city && placeHit(x, parsed.city)) rank -= 0.5;
       if (!inArea(x)) rank += 0.6;
+      if (listNames.size) rank += inList(x) ? -0.7 : 0.4;
       const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0;
       out.push({ rank, km, x });
     }
@@ -574,6 +602,7 @@
       if (x.k.startsWith(want.slice(0, 4))) sc -= .6;
       if (sc > 6) continue;
       if (!inArea(x)) sc += 1.5;
+      if (listNames.size) sc += inList(x) ? -1.5 : 0.8;
       if (parsed.city && placeHit(x, parsed.city)) sc -= 1;
       const km = depot ? haversine(depot.lat, depot.lon, x.lat, x.lon) / 1000 : 0;
       sc += km / 40;
@@ -605,8 +634,24 @@
 
   /** Verhörer, der sich eindeutig auflösen lässt (genau eine fast gleich geschriebene Straße im Zustellgebiet) → korrigierte Zeile. */
   function streetAuto(query) {
-    if (!streets || !area.size) return null;
+    if (!streets || (!area.size && !listNames.size)) return null;
     const parsed = parseQuery(query), want = norm(parsed.street);
+    if (listNames.size >= 5 && !parsed.city && want.length >= 4 && !listNames.has(want)) {
+      // Nicht in deiner Straßenliste → genau eine Straße der Liste, die ähnlich geschrieben ist oder gleich klingt?
+      // Gibt es die Straße wirklich im Gebiet, nur bei sehr knappen Abweichungen korrigieren.
+      const real = streets.list.some(x => x.k === want && inArea(x));
+      const listed = streets.list.filter(inList);
+      const max = real ? 1 : want.length >= 11 ? 3 : want.length >= 7 ? 2 : 1;
+      let best = [], bd = max + 1;
+      for (const x of listed) {
+        const d = lev(want, x.k, max);
+        if (d < bd) { bd = d; best = [x]; } else if (d === bd && d <= max) best.push(x);
+      }
+      if (bd <= max && new Set(best.map(x => x.k)).size === 1) return withNumber(best[0], parsed.housenumber);
+      const wph = koeln(want), same = listed.filter(x => phon(x).ph === wph || (!real && phon(x).ps === koeln(stem(want)) && lev(want, x.k, 4) <= 4));
+      if (new Set(same.map(x => x.k)).size === 1) return withNumber(same[0], parsed.housenumber);
+    }
+    if (!area.size) return null;
     if (parsed.city || want.length < 6 || streets.list.some(x => x.k === want)) return null;
     const max = want.length >= 11 ? 2 : 1;
     let best = [], bd = max + 1;
@@ -758,5 +803,5 @@
     }
   }
 
-  window.Geo = { setKeys, hereTest: k => { const o = hereKey; hereKey = k; return here('Berlin', null, { limit: 1 }).finally(() => { hereKey = o; }); }, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetNames: () => streets ? streets.list.map(x => ({ n: x.n, p: x.p, a: inArea(x) })).sort((a, b) => b.a - a.a) : [], streetAuto, similarStreets, streetPlaces, placesInCircle, streetsCover, loadAddresses, addrCount, addrLookup, addrPlaces, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
+  window.Geo = { setKeys, setStreetList, matchStreetNames, inStreetList: name => listNames.has(norm(name)), hereTest: k => { const o = hereKey; hereKey = k; return here('Berlin', null, { limit: 1 }).finally(() => { hereKey = o; }); }, tomtomTest: k => { const o = ttKey; ttKey = k; return tomtom('Berlin', null, { limit: 1 }).finally(() => { ttKey = o; }); }, geocode, reverse, matrix, route, haversine, suggest, remember, openState, postPoints, candidates, loadStreets, streetCount, streetSuggest, streetLookup, streetFix, streetNames: () => streets ? streets.list.map(x => ({ n: x.n, p: x.p, a: inArea(x) })).sort((a, b) => b.a - a.a) : [], streetAuto, similarStreets, streetPlaces, placesInCircle, streetsCover, loadAddresses, addrCount, addrLookup, addrPlaces, koeln, setArea, places, placeAt, isOutside, hasPlaceIn, parseQuery, norm };
 })();

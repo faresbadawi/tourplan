@@ -172,3 +172,12 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 
 - Überspringen: Knopf „Überspringen – Pakete nehme ich zurück mit“ am nächsten Stopp, in der aufgeklappten Zeile und im Fenster am Karten-Punkt. Übersprungene Stopps zählen nicht als zugestellt, kommen nicht mehr in Ankunftszeit, Laderaum und nächsten Stopp, werden gelb markiert und zeigen oben „X Pakete zurück“. Erneutes Tippen macht sie wieder offen (auch „Rückgängig“ im Hinweis)
 - Das Fenster „Geschafft“ nennt die Pakete, die zurück ins Depot fahren; der Verlauf speichert übersprungene Stopps getrennt
+
+## Version 22
+
+- **Schlauere Reihenfolge für Zusteller:** Stopps, die man bei einem Halt erledigt (gleiche Straße bis ca. 80 m Abstand oder direkt nebeneinander), bilden einen Haltepunkt und werden nie auseinandergerissen – egal, ob die Häuser links oder rechts liegen. Innerhalb des Haltepunkts kürzester Laufweg; bei gleich guter Richtung gewinnt die mit mehr Häusern auf der rechten Seite. Straßen werden möglichst in einem Zug abgefahren.
+- **Straßen-Reihenfolge:** Straßen „zuerst“ oder „zuletzt“ festlegen (Stopp antippen → „Vorrang“, Link über „Route optimieren“, Tour-Menü); bleibt für alle Touren gespeichert und ist unter „Tour & Navigation“ zu sehen.
+- **Zustellstraßen-Liste:** ganze Straßenliste (z. B. vom Zustellstützpunkt) auf einmal einfügen. Diktierte/vertippte Namen werden auf diese Liste korrigiert. Einmal zugeordnete Orte und selbst korrigierte Verhörer bleiben für immer gemerkt (sichtbar und löschbar unter „Zustellgebiet“).
+- **Karte jetzt direkt mit MapLibre:** mit zwei Fingern neigen (3D-Gebäude) und drehen, 3D-Knopf im Vollbild, Kompass/Zoom-Knöpfe.
+- **Hausnummern sichtbar:** Stopp-Nadeln stehen über der Adresse (Spitze zeigt aufs Haus), Hausnummern sitzen knapp darunter.
+- **Vollbild-Leiste:** dunkel mit großer weißer Straße und weißem Hausnummern-Schild; ein Doppelring (außen Pakete, innen Stopps, Mitte Stopp-Nummer) mit kurzer Legende.

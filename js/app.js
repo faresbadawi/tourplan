@@ -393,17 +393,20 @@
     }
     return style;
   }
-  async function vecStyle(dark) {
+  async function vecStyle(dark, keep3d) {
     const key = 'tp.vstyle.l';
     let style = null;
     try { const r = await fetch(`${OFM}/styles/liberty`); if (r.ok) { style = await r.json(); try { localStorage.setItem(key, JSON.stringify(style)); } catch (_) {} } } catch (_) {}
     if (!style) { try { style = JSON.parse(localStorage.getItem(key)); } catch (_) {} }
     if (!style) return null;
-    style.layers = style.layers.filter(l => l.id !== 'building-3d').map(l => { if (l.id !== 'building') return l; const n = Object.assign({}, l, { minzoom: 12 }); delete n.maxzoom; return n; });
+    style.layers = style.layers.filter(l => keep3d || l.id !== 'building-3d').map(l => {
+      if (l.id === 'building-3d') return Object.assign({}, l, { minzoom: 15, paint: Object.assign({}, l.paint, { 'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0, 16, .75] }) });
+      if (l.id !== 'building') return l; const n = Object.assign({}, l, { minzoom: 12 }); delete n.maxzoom; return n; });
     if (dark) darkenStyle(style);
     boldNames(style, dark);
     style.layers.push({ id: 'tp-housenumber', type: 'symbol', source: 'openmaptiles', 'source-layer': 'housenumber', minzoom: 16,
-      layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 12, 19, 17], 'text-padding': 1 },
+      layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 12, 19, 17], 'text-padding': 1,
+        'text-allow-overlap': ['>=', ['zoom'], 17.5], 'text-offset': keep3d ? [0, .75] : [0, 0] },     // knapp unter der Stopp-Nadel → bleibt sichtbar
       paint: { 'text-color': dark ? '#FFFFFF' : '#1F2937', 'text-halo-color': dark ? '#0B1220' : '#FFFFFF', 'text-halo-width': 2 } });
     return style;
   }
@@ -422,6 +425,100 @@
       owner.tiles = L.tileLayer(typeof st.url === 'function' ? st.url(dark) : st.url, { maxZoom: 19, subdomains: 'abc', detectRetina: false, attribution: st.attr }).addTo(map);
     }
   }
+  /* ---------- Hauptkarte direkt mit MapLibre (statt Leaflet): neigen (3D), drehen, Gebäude in 3D.
+     Kleiner Adapter mit den wenigen Leaflet-Aufrufen, die die Karte braucht (Marker, Pop-up, Ebenen, Kamera). ---------- */
+  const llOf = p => Array.isArray(p) ? [p[1], p[0]] : p && p.lat != null ? [p.lon != null ? p.lon : p.lng, p.lat] : p;
+  function rasterStyle(st, dark) {
+    const url = typeof st.url === 'function' ? st.url(dark) : st.url;
+    const tiles = url.includes('{s}') ? ['a', 'b', 'c'].map(x => url.replace('{s}', x)) : [url];
+    return { version: 8, glyphs: OFM + '/fonts/{fontstack}/{range}.pbf',
+      sources: { base: { type: 'raster', tiles, tileSize: 256, maxzoom: 19, attribution: st.attr } },
+      layers: [{ id: 'bg', type: 'background', paint: { 'background-color': dark ? '#161E2D' : '#EEF1F5' } },
+        { id: 'base', type: 'raster', source: 'base', paint: st.filter && dark ? { 'raster-brightness-max': .8, 'raster-saturation': -.5, 'raster-contrast': -.1 } : {} }] };
+  }
+  class GLLayer {
+    constructor(map) { this.map = map; this.items = new Set(); }
+    clearLayers() { this.items.forEach(m => m.remove(true)); this.items.clear(); }
+  }
+  class GLMarker {
+    constructor(p, { html, anchor = 'center', z = 0, offset = [0, 0] } = {}) {
+      this.p = llOf(p); this.z = z;
+      this.el = document.createElement('div'); this.el.className = 'gl-mk'; this.el.innerHTML = html;
+      this.mk = new maplibregl.Marker({ element: this.el, anchor, offset });
+      this.mk.setLngLat(this.p); this.ev = {};
+      this.el.addEventListener('click', e => {
+        if (e.target.closest('button,a')) return;
+        e.stopPropagation();
+        if (this.popup) this.togglePopup(); (this.ev.click || []).forEach(f => f());
+      });
+    }
+    on(k, f) { (this.ev[k] = this.ev[k] || []).push(f); return this; }
+    fire(k) { (this.ev[k] || []).forEach(f => f()); }
+    bindTooltip(t) { this.el.title = t.replace(/<[^>]+>/g, ''); return this; }
+    bindPopup(html, o = {}) { this.popHtml = html; this.popOpt = o; this.popup = true; return this; }
+    togglePopup() { if (this.pp && this.pp.isOpen()) this.closePopup(); else this.openPopup(); }
+    openPopup(noPan) {
+      if (!this.owner) return;
+      const map = this.owner.map;
+      map.closePopup();
+      const o = this.popOpt || {};
+      this.pp = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: o.offset || 24, className: o.className || '', maxWidth: (o.maxWidth || 240) + 'px', anchor: 'bottom' })
+        .setLngLat(this.p).setHTML(this.popHtml).addTo(map.gl);
+      map.openPop = this; this.fire('popupopen');
+      this.pp.on('close', () => { if (map.openPop === this) map.openPop = null; this.fire('popupclose'); });
+      if (!noPan) map.keepVisible(this.p, o.padTop || 80, o.padBottom || 200);
+    }
+    closePopup() { if (this.pp) this.pp.remove(); this.pp = null; }
+    addTo(owner) {
+      const map = owner instanceof GLLayer ? owner.map : owner;
+      this.owner = owner instanceof GLLayer ? owner : { map };
+      if (owner instanceof GLLayer) owner.items.add(this);
+      this.mk.addTo(map.gl); this.setZIndexOffset(this.z); return this;
+    }
+    remove(fromLayer) { if (this.pp) { const pp = this.pp; this.pp = null; pp.remove(); } this.mk.remove(); if (!fromLayer && this.owner && this.owner.items) this.owner.items.delete(this); }
+    getElement() { return this.el; }
+    setZIndexOffset(z) { this.z = z; this.el.style.zIndex = String(10 + z); return this; }
+    setLatLng(p) { this.p = llOf(p); this.mk.setLngLat(this.p); return this; }
+    setHtml(h) { this.el.innerHTML = h; return this; }
+  }
+  class GLMap {
+    constructor(el) {
+      this.gl = new maplibregl.Map({ container: el, style: { version: 8, sources: {}, layers: [] }, center: [10, 51], zoom: 5,
+        attributionControl: { compact: true }, maxPitch: 70, pitchWithRotate: true, dragRotate: true, touchPitch: true, fadeDuration: 150 });
+      this.gl.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: true, visualizePitch: true }), 'bottom-right');
+      this.openPop = null;
+      const h = k => ({ enable: () => this.gl[k].enable(), disable: () => this.gl[k].disable() });
+      this.dragging = { enable: () => { this.gl.dragPan.enable(); this.gl.dragRotate.enable(); }, disable: () => { this.gl.dragPan.disable(); this.gl.dragRotate.disable(); } };
+      this.touchZoom = { enable: () => { this.gl.touchZoomRotate.enable(); this.gl.touchPitch.enable(); }, disable: () => { this.gl.touchZoomRotate.disable(); this.gl.touchPitch.disable(); } };
+      this.scrollWheelZoom = h('scrollZoom'); this.doubleClickZoom = h('doubleClickZoom');
+    }
+    on(k, f) { if (k === 'dragstart') this.gl.on('dragstart', e => { if (e.originalEvent) f(e); }); else this.gl.on(k, f); return this; }
+    getZoom() { return this.gl.getZoom(); }
+    invalidateSize() { this.gl.resize(); }
+    closePopup() { if (this.openPop) this.openPop.closePopup(); this.openPop = null; }
+    pad() { return this.padding || { top: 0, bottom: 0, left: 0, right: 0 }; }
+    setView(p, z) { this.gl.jumpTo({ center: llOf(p), zoom: z, padding: this.pad() }); }
+    flyTo(p, z, o = {}) { this.gl.flyTo({ center: llOf(p), zoom: z, duration: (o.duration || .8) * 1000, padding: this.pad(), essential: true }); }
+    panTo(p, o = {}) { this.gl.easeTo({ center: llOf(p), duration: (o.duration || .5) * 1000, padding: this.pad() }); }
+    fitBounds(pts, o = {}) {
+      const b = new maplibregl.LngLatBounds();
+      pts.forEach(p => b.extend(llOf(p)));
+      const pd = o.padding ? o.padding[0] : 40, P = this.pad();
+      try { this.gl.fitBounds(b, { padding: { top: pd + P.top, bottom: pd + P.bottom, left: pd + P.left, right: pd + P.right }, maxZoom: o.maxZoom || 17, duration: 0, bearing: this.gl.getBearing(), pitch: this.gl.getPitch() }); } catch (_) {}
+    }
+    /** Pop-up nicht unter Leisten verstecken */
+    keepVisible(ll, top, bottom) {
+      const pt = this.gl.project(ll), H = this.gl.getContainer().clientHeight;
+      const need = pt.y - 230 < top ? pt.y - 230 - top : pt.y > H - bottom ? pt.y - (H - bottom) : 0;
+      if (need) this.gl.panBy([0, need], { duration: 300 });
+    }
+  }
+  /** Kreis (Genauigkeit des Standorts) als GeoJSON-Polygon */
+  function circleGeo(lat, lon, r) {
+    const c = [], k = Math.cos(lat * Math.PI / 180);
+    for (let i = 0; i <= 48; i++) { const a = i / 48 * 2 * Math.PI; c.push([lon + r * Math.sin(a) / (111320 * k), lat + r * Math.cos(a) / 110540]); }
+    return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [c] } };
+  }
   const mapStyle = () => (MAP_STYLES[settings.mapStyle] && styleOk(settings.mapStyle)) ? settings.mapStyle : 'vec';
   const Map_ = {
     map: null, tiles: null, layers: null, poiLayer: null, me: null, full: false, lastFit: '',
@@ -435,29 +532,37 @@
       }
     },
     ensure() {
-      if (!window.L) return null;
+      if (!window.maplibregl) return null;
       this.place();
       if (this.map) return this.map;
-      this.map = L.map($('#map'), { zoomControl: false, attributionControl: true });
-      L.control.zoom({ position: 'bottomright' }).addTo(this.map);
-      this.layers = L.layerGroup().addTo(this.map);
-      this.poiLayer = L.layerGroup().addTo(this.map);
+      this.map = new GLMap($('#map'));
+      this.layers = new GLLayer(this.map);
+      this.poiLayer = new GLLayer(this.map);
       this.setTiles();
+      this.map.gl.on('style.load', () => { this.onBase(); Me.accDraw(); });
       this.map.on('dragstart', () => { this.stopPlay(); if (Me.follow) { Me.follow = false; $('#map-locate').classList.remove('on'); } });
-      this.map.on('locationfound', e => {
-        if (this.me) this.me.remove();
-        this.me = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#0A84D6', fillOpacity: 1 }).addTo(this.map);
-      });
-      this.map.on('locationerror', () => toast('Standort nicht verfügbar'));
+      this.map.gl.on('rotate', () => Me.rotate());
+      this.map.gl.on('pitchend', () => this.sync3d()); this.map.gl.on('rotateend', () => this.sync3d());
+      this.map.gl.on('click', () => this.map.closePopup());
       return this.map;
     },
-    setTiles() {
+    /** 3D-Knopf: Karte neigen (Gebäude in 3D) oder wieder flach und nach Norden */
+    toggle3d() {
+      const gl = this.map && this.map.gl; if (!gl) return;
+      const tilted = gl.getPitch() > 5 || Math.abs(gl.getBearing()) > 2;
+      gl.easeTo(tilted ? { pitch: 0, bearing: 0, duration: 600 } : { pitch: 60, zoom: Math.max(gl.getZoom(), 16.5), duration: 700 });
+      settings.map3d = !tilted; persist();
+      if (!tilted) toast('3D: mit zwei Fingern hoch/runter wischen = neigen, drehen = drehen', 3200);
+    },
+    sync3d() { const gl = this.map && this.map.gl; const b = $('#map-3d'); if (gl && b) b.classList.toggle('on', gl.getPitch() > 5); },
+    async setTiles() {
       if (!this.map) return;
       const st = MAP_STYLES[mapStyle()], dark = mapDark();
-      $('#map').classList.toggle('map-dark', dark && !!st.filter);
-      // Standard-OSM wird im Dunkelmodus per CSS-Filter abgedunkelt, die anderen Stile haben eigene dunkle Kacheln
-      $('#map').classList.toggle('no-filter', !st.filter);
-      attachBase(this, this.map, st, dark);
+      const token = this.styleToken = (this.styleToken || 0) + 1;
+      let style = st.vector ? await vecStyle(dark, true) : rasterStyle(st, dark);
+      if (token !== this.styleToken) return;
+      if (!style) { toast('Karte gerade nicht erreichbar – Kartenstil „Deutschland“ wird genutzt', 3500); style = rasterStyle(MAP_STYLES.de, dark); }
+      this.map.gl.setStyle(style, { diff: false });
     },
     cycleStyle() {
       const keys = Object.keys(MAP_STYLES).filter(styleOk);
@@ -466,8 +571,9 @@
       const chip = document.createElement('div'); chip.className = 'map-style-chip'; chip.textContent = MAP_STYLES[mapStyle()].name;
       $('#map-wrap').appendChild(chip); setTimeout(() => chip.remove(), 1400);
     },
-    pin(p, html, cls) {
-      return L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: `<div class="pin ${cls || ''}">${html}</div>`, iconSize: [32, 32], iconAnchor: [16, 16] }) });
+    // Stopp-Nadel steht ÜBER der Adresse (Spitze zeigt aufs Haus) → die Hausnummer darunter bleibt lesbar
+    pin(p, html, cls, center) {
+      return new GLMarker(p, { html: `<div class="pin ${cls || ''}">${html}</div>${center ? '' : '<i class="pin-stem"></i>'}`, anchor: center ? 'center' : 'bottom' });
     },
     render(refit) {
       const depot = settings.depot;
@@ -479,13 +585,8 @@
       const bounds = [[depot.lat, depot.lon]];
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
 
-      const gl = this.tiles && this.tiles.getMaplibreMap ? this.tiles.getMaplibreMap() : null;
-      if (gl) this.glRoute(gl, route ? route.geometry : null, accent);
+      this.glRoute(m.gl, route ? route.geometry : null, accent);
       if (route) {
-        if (!gl) {                                   // Rasterkarte: Linie über der Karte (Namen sind dort Teil der Kacheln)
-          L.polyline(route.geometry, { color: mapDark() ? '#000' : '#fff', weight: 10, opacity: .55 }).addTo(this.layers);
-          L.polyline(route.geometry, { color: accent, weight: 6, opacity: .95 }).addTo(this.layers);
-        }
         const cur = currentIndex();
         route.order.forEach((id, i) => {
           const s = stopById(id); if (!s) return;
@@ -498,12 +599,10 @@
             <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
             <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span>${zi != null ? `<span class="pp-zone" style="--zc:${ZONE_COLORS[zi]}">Bereich ${ZONE_LETTERS[zi]}</span>` : ''}</div>
             <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button><button type="button" data-pin-skip="${id}">Überspringen</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
-            { closeButton: false, offset: [0, -14], className: 'pin-popup',
-              autoPanPaddingTopLeft: [12, this.full ? 76 : 12],
-              autoPanPaddingBottomRight: [12, this.full && !wide() ? 188 : 16], maxWidth: 224, minWidth: 204 })
+            { offset: 46, className: 'pin-popup', padTop: this.full ? 80 : 10, padBottom: this.full && !wide() ? 200 : 16, maxWidth: 224 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
           if (this.popId === id) this.reopen = mk;
-          this.pinEls[id] = mk.getElement() && mk.getElement().firstElementChild;
+          this.pinEls[id] = mk.getElement().firstElementChild;
           if (cls === 'current') mk.setZIndexOffset(1000);
           bounds.push([s.lat, s.lon]);
         });
@@ -515,9 +614,9 @@
           this.pin(s, s.pk && s.pk > 1 ? `<span>${s.pk}</span>` : '', 'dot' + (fresh ? ' drop' : '')).bindTooltip(esc(s.label)).addTo(this.layers); bounds.push([s.lat, s.lon]);
         });
       }
-      this.pin(depot, HOME_ICON, 'depot').bindTooltip(esc(depot.name)).addTo(this.layers);
+      this.pin(depot, HOME_ICON, 'depot', true).bindTooltip(esc(depot.name)).setZIndexOffset(-50).addTo(this.layers);
       this.renderPois();
-      if (this.reopen) this.reopen.openPopup();
+      if (this.reopen) this.reopen.openPopup(true);
       this.rendering = false;
       // nur neu einpassen, wenn sich die Punkte geändert haben – nicht bei jedem Haken
       const key = (route ? route.order.join() : stops.filter(s => s.status === 'ok').map(s => s.id).join()) + '|' + depot.lat + '|' + this.zoomOn();
@@ -527,7 +626,7 @@
       setTimeout(() => {
         m.invalidateSize();
         const nx = this.nextStop();
-        if (nx) m.setView([nx.lat, nx.lon], 17);
+        if (nx) m.setView([nx.lat, nx.lon], Math.max(17, m.getZoom() > 17.5 ? m.getZoom() : 17));
         else if (bounds.length > 1) m.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 }); else m.setView(bounds[0], 13);
       }, 50);
     },
@@ -537,6 +636,7 @@
         try {
           const dark = mapDark(), sym = (gl.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
           const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: (geom || []).map(([a, b]) => [b, a]) } };
+          if (!geom && !gl.getSource('tp-route')) return;
           if (!gl.getSource('tp-route')) {
             gl.addSource('tp-route', { type: 'geojson', data });
             gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 10, 'line-opacity': .55 } }, sym);
@@ -546,7 +646,7 @@
           gl.setPaintProperty('tp-route-line', 'line-color', accent);
         } catch (e) { console.warn('Route in Vektorkarte:', e); }
       };
-      const tryRun = n => { if (gl.isStyleLoaded()) run(); else if (n < 60) setTimeout(() => tryRun(n + 1), 250); };
+      const tryRun = n => { if (gl.isStyleLoaded()) run(); else if (n < 80) setTimeout(() => tryRun(n + 1), 250); };
       tryRun(0);
     },
     onBase() { if (this.map && settings.depot) this.render(); },
@@ -558,7 +658,7 @@
       if (!list.length) { chip.hidden = true; return; }
       list.forEach(p => {
         const st = Pois.state(p);
-        L.marker([p.lat, p.lon], { zIndexOffset: -200, icon: L.divIcon({ className: '', html: `<div class="poi-pin ${p.kind} ${st.open === false ? 'closed' : ''}">${p.kind === 'locker' ? 'P' : MAIL_ICON}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+        new GLMarker(p, { z: -200, html: `<div class="poi-pin ${p.kind} ${st.open === false ? 'closed' : ''}">${p.kind === 'locker' ? 'P' : MAIL_ICON}</div>` })
           .bindTooltip(esc(p.name)).on('click', () => openPoiSheet(p.id)).addTo(this.poiLayer);
       });
       const open = list.filter(p => Pois.state(p).open !== false).length;
@@ -605,6 +705,7 @@
       document.body.classList.toggle('map-full', on);
       $('#map-close').hidden = !on; $('#map-full').hidden = on;
       this.place(); renderMapBar();
+      if (this.map) this.map.padding = on && !wide() ? { top: 70, bottom: 190, left: 0, right: 0 } : null;
       if (on) history.pushState({ mapFull: true }, '');
       else if (!viaHistory && history.state && history.state.mapFull) history.back();
       this.syncTouch();
@@ -619,6 +720,9 @@
       $('#map-tap').hidden = !inline;
       if (!this.map) return;
       ['dragging', 'touchZoom', 'scrollWheelZoom', 'doubleClickZoom'].forEach(h => this.map[h][inline ? 'disable' : 'enable']());
+      if (inline && this.map.gl.getPitch() > 0) this.map.gl.jumpTo({ pitch: 0, bearing: 0 });       // klein: immer flach und genordet
+      else if (!inline && settings.map3d && this.full) setTimeout(() => this.map.gl.easeTo({ pitch: 55, duration: 500 }), 400);
+      this.sync3d();
     },
   };
   const MAIL_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3.5 7.5 12 13l8.5-5.5"/></svg>';
@@ -631,6 +735,7 @@
   $('#map-full').onclick = () => Map_.setFull(true);
   $('#map-close').onclick = () => Map_.setFull(false);
   $('#map-layers').onclick = openLayerSheet;
+  $('#map-3d').onclick = () => Map_.toggle3d();
   addEventListener('online', () => Map_.setTiles()); addEventListener('offline', () => Map_.setTiles());
   $('#map-zoom').onclick = () => Map_.toggleZoom();
   $('#map-locate').onclick = () => {
@@ -649,12 +754,13 @@
     html() { const k = ME_ICONS[settings.meIcon] ? settings.meIcon : 'arrow'; return `<div class="me me-${k}${this.heading == null ? ' no-heading' : ''}"><div class="me-rot">${ME_ICONS[k].svg}</div></div>`; },
     redraw() {
       if (!this.marker) return;
-      this.marker.setIcon(L.divIcon({ className: '', html: this.html(), iconSize: [44, 44], iconAnchor: [22, 22] }));
+      this.marker.setHtml(this.html());
       this.rotate();
     },
     rotate() {
       const el = this.marker && this.marker.getElement(); if (!el) return;
-      const r = el.querySelector('.me-rot'); if (r) r.style.transform = `rotate(${this.heading || 0}deg)`;
+      const b = Map_.map ? Map_.map.gl.getBearing() : 0;
+      const r = el.querySelector('.me-rot'); if (r) r.style.transform = `rotate(${(this.heading || 0) - b}deg)`;
       el.firstElementChild.classList.toggle('no-heading', this.heading == null);
     },
     async compass(fromClick) {
@@ -686,10 +792,9 @@
         const c = p.coords;
         this.pos = { lat: c.latitude, lon: c.longitude, speed: c.speed || 0, t: Date.now() };
         if (c.heading != null && !isNaN(c.heading) && (c.speed || 0) > 2.5) { this.heading = c.heading; }
-        if (!this.marker) {
-          this.marker = L.marker([c.latitude, c.longitude], { zIndexOffset: 2000, interactive: false, icon: L.divIcon({ className: '', html: this.html(), iconSize: [44, 44], iconAnchor: [22, 22] }) }).addTo(m);
-          this.acc = L.circle([c.latitude, c.longitude], { radius: c.accuracy, color: '#1A73E8', weight: 1, opacity: .3, fillOpacity: .08, interactive: false }).addTo(m);
-        } else { this.marker.setLatLng([c.latitude, c.longitude]); this.acc.setLatLng([c.latitude, c.longitude]).setRadius(c.accuracy); }
+        if (!this.marker) this.marker = new GLMarker([c.latitude, c.longitude], { z: 2000, html: this.html() }).addTo(m);
+        else this.marker.setLatLng([c.latitude, c.longitude]);
+        this.accPos = { lat: c.latitude, lon: c.longitude, r: c.accuracy }; this.accDraw();
         this.rotate();
         if (this.follow) {
           if (this.first) { m.setView([c.latitude, c.longitude], Math.max(m.getZoom(), 17)); this.first = false; }
@@ -700,11 +805,21 @@
         if (fromClick) toast(err.code === 1 ? 'Standort nicht freigegeben – in den Browser-Einstellungen erlauben' : 'Standort gerade nicht verfügbar', 3500);
       }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
     },
+    accDraw() {                  // Genauigkeitskreis um den Standort
+      const gl = Map_.map && Map_.map.gl; if (!gl || !gl.isStyleLoaded()) return;
+      try {
+        const a = this.accPos, data = a ? circleGeo(a.lat, a.lon, Math.min(a.r || 0, 300)) : { type: 'FeatureCollection', features: [] };
+        if (!gl.getSource('tp-acc')) {
+          gl.addSource('tp-acc', { type: 'geojson', data });
+          gl.addLayer({ id: 'tp-acc', type: 'fill', source: 'tp-acc', paint: { 'fill-color': '#1A73E8', 'fill-opacity': .1, 'fill-outline-color': 'rgba(26,115,232,.35)' } });
+        } else gl.getSource('tp-acc').setData(data);
+      } catch (_) {}
+    },
     stop() {                     // Standort ganz ausschalten: Anzeige weg, kein Mitlaufen, keine GPS-Abfrage mehr
       if (this.watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null; this.follow = false; this.first = true; this.pos = null;
-      if (this.marker) this.marker.remove(); if (this.acc) this.acc.remove();
-      this.marker = this.acc = null;
+      if (this.marker) this.marker.remove();
+      this.marker = null; this.accPos = null; this.accDraw();
       $('#map-locate').classList.remove('on');
     },
     auto() {                     // Standort schon erlaubt → im Vollbild gleich anzeigen (ohne Nachfrage), außer du hast ihn ausgeschaltet
@@ -781,7 +896,9 @@
       let { query, pk } = Speech.parseLine(line);
       if (query.length < 3) continue;
       let fixedFrom = null;
-      const auto = !picked.has(query) && Geo.streetAuto(query);          // eindeutiger Verhörer im Zustellgebiet → gleich richtig schreiben
+      const fx = !picked.has(query) && applyFix(query);                  // früher selbst korrigiert → gleich übernehmen
+      if (fx) { fixedFrom = query; query = fx; }
+      const auto = !fx && !picked.has(query) && Geo.streetAuto(query);          // eindeutiger Verhörer im Zustellgebiet → gleich richtig schreiben
       if (auto) { fixedFrom = query; query = auto; }
       let ask = null;
       if (!Geo.hasPlaceIn(query)) {                 // Ort aus Auswahl, Gelerntem oder Straßenverzeichnis ergänzen
@@ -798,7 +915,9 @@
         const pickedCity = pickedPlace.get(key);
         const st = Geo.streetLookup(query, settings.depot);
         let place = '';
+        const learnedOk = learned && (!pl.length || pl.some(p => Geo.norm(p.place) === Geo.norm(learned)) || choices.some(x => Geo.norm(x.place) === Geo.norm(learned)));
         if (pickedCity) place = pickedCity;
+        else if (learnedOk) place = learned;                       // einmal selbst zugeordnet → gilt für immer
         else if (configured.length === 1) place = configured[0].place;
         else if (configured.length > 1) ask = configured.slice(0, 6);
         else if (choices.length) ask = choices.slice(0, 6).map(x => ({ place: x.place, inArea: !settings.area?.length || settings.area.some(a => Geo.norm(a) === Geo.norm(x.place)) }));
@@ -826,11 +945,23 @@
   }
 
   /** Merken, in welchem Ort eine Straße gemeint ist (bei gleichnamigen Straßen) */
+  /** Verhörer/Tippfehler einmal korrigiert → beim nächsten Mal gleich richtig (nur, wenn die alte Straße unbekannt war) */
+  function rememberFix(oldQuery, newQuery, wasBad) {
+    const a = Geo.parseQuery(oldQuery).street, b = Geo.parseQuery(newQuery).street;
+    if (!a || !b || Geo.norm(a) === Geo.norm(b)) return;
+    if (!wasBad && Geo.streetPlaces(oldQuery, settings.depot).length) return;
+    settings.fix = Object.assign({}, settings.fix, { [Geo.norm(a)]: b }); persist();
+  }
+  function applyFix(query) {
+    const p = Geo.parseQuery(query), to = p.street && (settings.fix || {})[Geo.norm(p.street)];
+    return to ? query.replace(p.street, to) : null;
+  }
   function learnPlace(query) {
     const p = Geo.parseQuery(query); if (!p.city || !p.street) return;
+    const want = p.city.replace(/^\d{5}\s*/, '').trim(); if (!want) return;
     const places = Geo.streetPlaces(query, settings.depot).map(x => x.place);
-    const city = places.find(x => Geo.norm(x) === Geo.norm(p.city.replace(/^\d{5}\s*/, '')));
-    if (places.length > 1 && city) { settings.learn = Object.assign({}, settings.learn, { [Geo.norm(p.street)]: city }); persist(); }
+    const city = places.find(x => Geo.norm(x) === Geo.norm(want)) || (!places.length ? want : null);
+    if (city) { settings.learn = Object.assign({}, settings.learn, { [Geo.norm(p.street)]: city }); persist(); }
   }
 
   /** Adresse suchen. Das Straßenverzeichnis prüft den Treffer, springt ein, wenn der Dienst nichts findet,
@@ -988,6 +1119,7 @@
         const q = parsed.query || s.query;
         s.pk = parsed.pk || pk || null;
         if (q !== s.query || hit) {
+          rememberFix(s.fixedFrom || s.query, q, s.status === 'err' || !!s.fixedFrom);
           s.query = q; delete s.ask; learnPlace(q);
           if (hit) { Object.assign(s, { status: 'ok', label: hit.label, lat: hit.lat, lon: hit.lon, approx: false }); Geo.remember(q, settings.depot, hit); }
           else Object.assign(s, { status: 'pending', label: '', approx: false });
@@ -1096,6 +1228,7 @@
     const alt = e.target.closest('[data-alt]');
     if (alt) {                                        // Korrekturvorschlag übernehmen
       const s = stopById(li.dataset.id);
+      rememberFix(s.query, s.alts[+alt.dataset.alt], true);
       Object.assign(s, { query: s.alts[+alt.dataset.alt], status: 'pending', alts: null }); learnPlace(s.query);
       persist(); renderStops(); runGeocoding(); return;
     }
@@ -1312,6 +1445,7 @@
     const b = e.target.closest('[data-qsim]'); if (!b) return;
     const li = b.closest('li'), s = stopById(li.dataset.qid); if (!s) return;
     const line = b.dataset.qsim;
+    rememberFix(s.fixedFrom || s.query, line, s.status === 'err');
     Object.assign(s, { query: line, status: 'pending', alts: null, label: '' }); delete s.fixedFrom; delete s.ask; learnPlace(line);
     persist(); renderStops(); runGeocoding();
     li.querySelector('span').textContent = line; li.querySelector('.sim-list').remove();
@@ -1351,15 +1485,22 @@
      reopt = true: offene Stopps neu sortieren (erledigte bleiben vorn stehen)
      reopt = false: Reihenfolge behalten, nur Strecke neu berechnen (nach Löschen/Bearbeiten) */
   let planning = false, planAgain = null, gpsNote = '';
-  function stopAffinity(points) {
-    const A = Array.from({ length: points.length }, () => new Array(points.length).fill(0));
+  /** Straße und Ort je Punkt (für Haltepunkt-Gruppen, Straßen-Zusammenhalt und Vorrang) */
+  function stopInfo(points) {
     const preferred = new Set((settings.deliveryStreets || []).map(x => Geo.norm(x.street) + '|' + Geo.norm(x.place)));
-    const info = points.map(s => {
+    return points.map(s => {
       if (!s || !s.query) return null;
       const p = Geo.parseQuery(s.query);
-      const street = Geo.norm(p.street), city = Geo.norm(s.city || p.city.split(/[0-9,]/)[0]);
+      const street = Geo.norm(p.street), city = Geo.norm(s.city || p.city.replace(/^\d{5}\s*/, '').split(/[0-9,]/)[0].trim());
       return { street, city, preferred: preferred.has(street + '|' + city) };
     });
+  }
+  /** Vorrang je Punkt: -1 = zuerst, 1 = zuletzt (selbst gewählte Straßen, bleibt gespeichert) */
+  const streetPrio = s => (s && s.query && (settings.streetPrio || {})[Geo.norm(Geo.parseQuery(s.query).street)]) || null;
+  const prioRank = points => points.map(s => { const p = streetPrio(s); return p === 'first' ? -1 : p === 'last' ? 1 : 0; });
+  function stopAffinity(points) {
+    const A = Array.from({ length: points.length }, () => new Array(points.length).fill(0));
+    const info = stopInfo(points);
     for (let i = 1; i < points.length; i++) for (let j = 1; j < points.length; j++) {
       if (i === j || !info[i] || !info[j]) continue;
       if (info[i].city && info[j].city && info[i].city !== info[j].city) continue;
@@ -1405,12 +1546,14 @@
         source = M.source;
         const d = (a, b) => M.dur[a][b];
         const seq = base.map((_, i) => i + 1);
+        const rk = prioRank([...nodes, depot]); rk[0] = -1; rk[dIdx] = 1;
         fresh.forEach((_, k) => {
           const f = base.length + 1 + k; let bestP = seq.length, bestC = Infinity;
           for (let q = 0; q <= seq.length; q++) {
             const a = q === 0 ? 0 : seq[q - 1], nx = q === seq.length ? (settings.roundtrip ? dIdx : -1) : seq[q];
             const c = d(a, f) + (nx === -1 ? 0 : d(f, nx) - d(a, nx))
-              - affinity[a][f] - (nx === -1 ? 0 : affinity[f][nx]) + (nx === -1 ? 0 : affinity[a][nx]);
+              - affinity[a][f] - (nx === -1 ? 0 : affinity[f][nx]) + (nx === -1 ? 0 : affinity[a][nx])
+              + (rk[a] > rk[f] || (nx !== -1 && rk[f] > rk[nx]) ? 1e6 : 0);        // Vorrang-Straßen einhalten
             if (c < bestC - 1e-6) { bestC = c; bestP = q; }
           }
           seq.splice(bestP, 0, f);
@@ -1431,7 +1574,9 @@
         const affinity = stopAffinity(pts);
         if (backIdx) for (let i = 1; i <= n; i++) D[i][0] = M.dur[i][backIdx];
         const naive = Optimize.tourCost(rest.map((_, i) => i + 1), D, settings.roundtrip);
-        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 6000 : n > 80 ? 4000 : 2500, affinity);
+        const pts0 = pts.slice(0, n + 1);
+        const { order, cost } = Optimize.solve(D, settings.roundtrip, n > 150 ? 6000 : n > 80 ? 4000 : 2500, affinity,
+          { points: pts0.map(p => ({ lat: p.lat, lon: p.lon })), info: stopInfo(pts0), rank: prioRank(pts0) });
         rest = order.map(i => rest[i - 1]);
         source = M.source;
         if (first) saving = Math.max(0, naive - cost);
@@ -1677,6 +1822,7 @@
           <a class="btn primary" href="${navUrl(s)}" target="_blank" rel="noopener">${ICON.nav} ${app.name}</a>
           <button class="btn ghost" data-skip="${s.id}">${ICON.skip} ${skip ? 'Wieder offen' : 'Überspringen'}</button>
           <button class="btn ghost" data-row="map">${PIN_ICON} Karte</button>
+          <button class="btn ghost" data-row="prio">${ICON.road} ${({ first: 'Straße: zuerst', last: 'Straße: zuletzt' })[streetPrio(s)] || 'Vorrang'}</button>
           <button class="btn ghost" data-row="edit">${ICON.edit} Bearbeiten</button>
           <button class="btn ghost danger" data-row="del">${ICON.del} Löschen</button>
         </div>` : ''}
@@ -1701,6 +1847,7 @@
     if (act) {
       if (act.dataset.row === 'del') return removeStop(id);
       if (act.dataset.row === 'edit') { editingId = id; openId = null; return renderResult(); }
+      if (act.dataset.row === 'prio') return openPrioSheet(Geo.norm(Geo.parseQuery(stopById(id).query).street));
       if (act.dataset.row === 'map') { const s = stopById(id); if (!wide()) Map_.setFull(true); setTimeout(() => Map_.flyTo(s), 250); return; }
     }
     if (e.target.closest('a,button')) return;
@@ -1989,12 +2136,67 @@
       ${sec.length === 1 ? `<a class="menu-item" href="${sec[0].url}" target="_blank" rel="noopener">${NAV.google.icon}<span><b>Restliche Route in Google Maps</b><small>${open} Stopp${open === 1 ? '' : 's'} ab deinem Standort</small></span>${CHEV}</a>`
         : sec.length ? `<button class="menu-item" data-menu="google">${NAV.google.icon}<span><b>Route in Google Maps</b><small>${open} Stopps in ${sec.length} Abschnitten</small></span>${CHEV}</button>` : ''}
       <button class="menu-item" data-menu="reopt" ${open < 2 ? 'disabled' : ''}>${ICON.route}<span><b>Offene Stopps neu optimieren</b><small>Erledigte bleiben stehen</small></span></button>
+      <button class="menu-item" data-menu="prio">${ICON.road}<span><b>Straßen-Reihenfolge</b><small>Straßen zuerst oder zuletzt fahren</small></span>${CHEV}</button>
       <button class="menu-item" data-menu="share"><svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></svg><span><b>Liste teilen oder kopieren</b><small>Reihenfolge als Text</small></span></button>
       <button class="menu-item" data-menu="reset"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.6-5.9M4 4v4h4"/></svg><span><b>Alle Haken zurücksetzen</b></span></button>
       <button class="menu-item" data-menu="finish"><svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2.5 4L17 12H5"/></svg><span><b>Tour beenden &amp; speichern</b><small>Kommt mit Datum in den Verlauf</small></span></button>
       <button class="menu-item danger" data-menu="end">${ICON.del}<span><b>Tour verwerfen</b><small>Alle Stopps löschen, nichts speichern</small></span></button>
     </div>`);
   }
+  /* Straßen-Vorrang: Straßen immer zuerst oder zuletzt fahren (bleibt gespeichert, gilt für jede Tour) */
+  const PRIO_LABEL = { first: 'Zuerst', '': 'Normal', last: 'Zuletzt' };
+  function tourStreets() {
+    const m = new Map();
+    const list = route ? route.order.map(stopById).filter(s => s && !route.done[s.id]) : stops.filter(s => s.status === 'ok' || s.status === 'pending');
+    list.forEach(s => {
+      const st = Geo.parseQuery(s.query).street; if (!st) return;
+      const k = Geo.norm(st), e = m.get(k);
+      if (e) { e.n++; e.pk += s.pk || 1; } else m.set(k, { k, name: st, n: 1, pk: s.pk || 1 });
+    });
+    return [...m.values()];
+  }
+  function prioRow(k, name, sub, focus) {
+    const cur = (settings.streetPrio || {})[k] || '';
+    return `<div class="prio-row${focus ? ' focus' : ''}" data-prio-row="${esc(k)}"><div class="prio-name"><b>${esc(name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+      <div class="segmented sm">${Object.entries(PRIO_LABEL).map(([v, l]) => `<button type="button" data-prio="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div></div>`;
+  }
+  function openPrioSheet(focusKey) {
+    const names = settings.streetPrioNames || {};
+    const inTour = tourStreets();
+    const keys = new Set(inTour.map(x => x.k));
+    const saved = Object.keys(settings.streetPrio || {}).filter(k => !keys.has(k));
+    const rows = inTour.sort((a, b) => ((settings.streetPrio || {})[b.k] ? 1 : 0) - ((settings.streetPrio || {})[a.k] ? 1 : 0) || a.name.localeCompare(b.name, 'de'))
+      .map(x => prioRow(x.k, x.name, `${x.n} Stopp${x.n === 1 ? '' : 's'} · ${pkLabel(x.pk)}`, x.k === focusKey));
+    openSheet('Straßen-Reihenfolge', `<p class="sheet-note">„Zuerst“-Straßen fährst du am Anfang, „Zuletzt“-Straßen am Ende – dazwischen sortiert die App wie immer. Die Wahl bleibt für alle Touren gespeichert.</p>
+      <div class="prio-list">${rows.join('') || '<small class="muted">Noch keine Stopps.</small>'}</div>
+      ${saved.length ? `<h3 class="mini">Weitere gespeicherte Straßen</h3><div class="prio-list">${saved.map(k => prioRow(k, names[k] || k, '', false)).join('')}</div>` : ''}
+      ${route || stops.some(s => s.status === 'ok') ? '<button class="btn primary wide" data-prio-apply style="margin-top:14px">Jetzt neu sortieren</button>' : ''}`);
+    setTimeout(() => { const f = document.querySelector('.prio-row.focus'); if (f) f.scrollIntoView({ block: 'center' }); }, 60);
+  }
+  function setPrio(k, v, name) {
+    const p = Object.assign({}, settings.streetPrio), nm = Object.assign({}, settings.streetPrioNames);
+    if (v) { p[k] = v; if (name) nm[k] = name; } else { delete p[k]; delete nm[k]; }
+    settings.streetPrio = p; settings.streetPrioNames = nm; persist();
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-prio]'); if (!b) return;
+    const row = b.closest('[data-prio-row]'); if (!row) return;
+    setPrio(row.dataset.prioRow, b.dataset.prio, row.querySelector('.prio-name b').textContent);
+    row.querySelectorAll('[data-prio]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    if (!$('#settings').hidden) renderPrioSettings();
+  });
+  $('#sheet-body').addEventListener('click', e => {
+    if (!e.target.closest('[data-prio-apply]')) return;
+    closeSheet();
+    if (route) { plan(true); toast('Wird mit deiner Straßen-Reihenfolge neu sortiert …'); } else plan(true);
+  });
+  $('#prio-btn').onclick = () => openPrioSheet();
+  function renderPrioSettings() {
+    const el = $('#s-prio'), p = settings.streetPrio || {}, nm = settings.streetPrioNames || {};
+    const ks = Object.keys(p);
+    el.innerHTML = ks.length ? ks.map(k => prioRow(k, nm[k] || k, '', false)).join('') : '<small class="muted">Noch keine Straße festgelegt.</small>';
+  }
+
   function openGoogleSheet() {
     const sec = googleSections();
     openSheet('Route in Google Maps', `<p class="sheet-note">Google Maps nimmt höchstens 10 Ziele auf einmal. Öffne die Abschnitte der Reihe nach – der erste startet an deinem Standort.</p>
@@ -2007,6 +2209,7 @@
     if (m) {
       const a = m.dataset.menu;
       if (a === 'google') return openGoogleSheet();
+      if (a === 'prio') return openPrioSheet();
       closeSheet();
       if (a === 'reopt') { plan(true); toast('Offene Stopps werden neu sortiert …'); }
       if (a === 'reset') { route.done = {}; persist(); renderResult(); }
@@ -2179,13 +2382,12 @@
     const pkLeft = open.reduce((a, x) => a + (x.pk || 1), 0);
     const pkTotal = route.order.reduce((a, id) => { const x = stopById(id); return a + (x ? x.pk || 1 : 0); }, 0);
     const pkDone = Math.max(0, pkTotal - pkLeft);
-    const closed = n - open.length, circumference = 2 * Math.PI * 20;
-    const ring = (left, total, done, label, color) => {
-      const f = total ? Math.min(1, Math.max(0, done / total)) : 1;
-      return `<div class="mp-item"><div class="mp-circle"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="bg" cx="24" cy="24" r="20"/><circle class="fg" cx="24" cy="24" r="20" style="--progress-color:${color};stroke-dasharray:${circumference};stroke-dashoffset:${circumference * (1 - f)}"/></svg><b>${left}</b></div><small>${label} übrig</small></div>`;
-    };
-    progress.innerHTML = ring(pkLeft, pkTotal, pkDone, 'Pakete', 'var(--accent)') + ring(open.length, n, closed, 'Stopps', 'var(--ok)');
-    progress.hidden = false;
+    const closed = n - open.length;
+    progress.hidden = true; progress.innerHTML = '';
+    // Ein Doppelring: außen Pakete, innen Stopps – in der Mitte die Nummer des nächsten Stopps
+    const arc = (r, f, cls) => { const C = 2 * Math.PI * r; return `<circle class="bg" cx="26" cy="26" r="${r}"/><circle class="fg ${cls}" cx="26" cy="26" r="${r}" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - Math.min(1, Math.max(0, f)))}"/>`; };
+    const ringHtml = `<div class="mb-ring" aria-label="${pkLeft} Pakete und ${open.length} Stopps übrig"><svg viewBox="0 0 52 52" aria-hidden="true">${arc(23, pkTotal ? pkDone / pkTotal : 1, 'pk')}${arc(16.5, n ? closed / n : 1, 'st')}</svg><b>${cur !== -1 ? cur + 1 : HOME_ICON}</b></div>`;
+    const legend = `<span class="mb-legend"><span class="lg lg-pk"><i></i><b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'}</span><span class="lg lg-st"><i></i><b>${open.length}</b> Stopp${open.length === 1 ? '' : 's'} übrig</span></span>`;
     // Straße + Hausnummer aus der Eingabe (das Label beginnt manchmal mit einem Geschäftsnamen)
     const parsed = cur !== -1 && !s.poi ? Geo.parseQuery(s.query) : null;
     const street = cur !== -1 ? (s.poi ? s.label.split(',')[0] : parsed.street) : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
@@ -2198,8 +2400,8 @@
     const walkHint = previous && walkM <= 300 ? `<span class="mb-walk">${walkM} m vom letzten Stopp · zu Fuß prüfen</span>` : '';
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
     bar.innerHTML = `
-      <div class="mb-top"><span class="mb-num">${cur !== -1 ? cur + 1 : HOME_ICON}</span>${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}
-      <button class="mb-info" id="mb-info"><span class="mb-street">${ICON.road}<b>${esc(street)}</b>${house ? `<em class="mb-hn">${esc(house)}</em>` : ''}</span><span>${esc(sub)}</span>${walkHint}</button></div>
+      <div class="mb-top">${ringHtml}
+      <button class="mb-info" id="mb-info"><span class="mb-street"><b>${esc(street)}</b>${house ? `<em class="mb-hn">${esc(house)}</em>` : ''}${zi != null ? `<span class="mb-zone" style="--zc:${ZONE_COLORS[zi]}" title="Ladebereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}</span><span class="mb-sub">${esc(sub)}</span>${legend}${walkHint}</button></div>
       <div class="mb-acts">${cur !== -1 ? `<button class="dock-btn ghost mb-skip" data-skip="${s.id}" aria-label="Überspringen" title="Überspringen">${ICON.skip}</button>
         <button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}<span>Erledigt</span></button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}</div>`;
@@ -2472,6 +2674,7 @@
   function applyArea() {
     if (!settings.area && Geo.streetCount()) { settings.area = defaultArea(); settings.areaAuto = true; persist(); }
     Geo.setArea(settings.area || []);
+    Geo.setStreetList(settings.deliveryStreets || []);
     refreshOutside(); persist();
   }
   function addToArea(name) {
@@ -2493,7 +2696,12 @@
   const deliveryStreetKey = x => Geo.norm(x.street) + '|' + Geo.norm(x.place);
   function renderDeliveryStreets() {
     const selected = $('#s-streets-selected'), suggest = $('#s-street-suggest');
-    selected.innerHTML = editingDeliveryStreets.length ? editingDeliveryStreets.map(x => `<button type="button" aria-label="Zustellstraße ${esc(x.street)}, ${esc(x.place)} entfernen" data-street-remove="${esc(deliveryStreetKey(x))}"><span>${esc(x.street)}</span><small>${esc(x.place)}</small></button>`).join('') : '<small class="muted">Noch keine einzelnen Straßen gespeichert.</small>';
+    const sorted = editingDeliveryStreets.slice().sort((a, b) => a.street.localeCompare(b.street, 'de'));
+    $('#s-streets-count').textContent = editingDeliveryStreets.length ? `(${editingDeliveryStreets.length})` : '';
+    const learned = Object.entries(settings.learn || {}), fixes = Object.entries(settings.fix || {});
+    selected.innerHTML = (sorted.length ? sorted.map(x => `<button type="button" aria-label="Zustellstraße ${esc(x.street)}, ${esc(x.place)} entfernen" data-street-remove="${esc(deliveryStreetKey(x))}"><span>${esc(x.street)}</span><small>${esc(x.place || 'Ort offen')}</small></button>`).join('') : '<small class="muted">Noch keine Straßen gespeichert.</small>')
+      + (sorted.length > 1 ? '<button type="button" class="link danger" data-street-clear>Alle Straßen entfernen</button>' : '')
+      + (learned.length || fixes.length ? `<h3 class="mini" style="flex-basis:100%">Gemerkt (gilt für immer)</h3>${learned.map(([k, v]) => `<button type="button" data-learn-remove="${esc(k)}"><span>${esc(k)}</span><small>→ ${esc(v)}</small></button>`).join('')}${fixes.map(([k, v]) => `<button type="button" data-fix-remove="${esc(k)}"><span>„${esc(k)}“</span><small>→ ${esc(v)}</small></button>`).join('')}` : '');
     const q = $('#s-street-search').value.trim();
     if (q.length < 2) { suggest.hidden = true; suggest.innerHTML = ''; return; }
     const chosen = new Set(editingDeliveryStreets.map(deliveryStreetKey));
@@ -2502,6 +2710,22 @@
     suggest.hidden = false;
   }
   $('#s-street-search').addEventListener('input', renderDeliveryStreets);
+  $('#s-street-bulk-go').onclick = () => {
+    const lines = $('#s-street-bulk').value.split(/\n|;/).map(x => x.trim()).filter(x => x.length > 2);
+    if (!lines.length) return;
+    const have = new Set(editingDeliveryStreets.map(deliveryStreetKey));
+    let added = 0, unknown = 0;
+    const push = x => { const k = deliveryStreetKey(x); if (!have.has(k)) { have.add(k); editingDeliveryStreets.push(x); added++; } };
+    Geo.matchStreetNames(lines).forEach(r => {
+      const inA = r.hits.filter(h => h.inArea);
+      const use = r.place ? r.hits : inA.length ? inA : r.hits.length <= 2 ? r.hits : [];
+      if (use.length) use.forEach(h => push({ street: h.street, place: h.place }));
+      else { push({ street: r.name, place: r.place }); unknown++; }
+    });
+    $('#s-street-bulk').value = '';
+    $('#s-street-bulk-note').textContent = `${added} Straße${added === 1 ? '' : 'n'} übernommen${unknown ? ` · ${unknown} nicht im Straßenverzeichnis (trotzdem gespeichert)` : ''}${!Geo.streetCount() ? ' · Tipp: erst das Gebiet laden, dann werden Orte ergänzt' : ''}. Mit „Speichern“ übernehmen.`;
+    renderDeliveryStreets();
+  };
   $('#s-street-suggest').addEventListener('click', e => {
     const b = e.target.closest('[data-street-add]'); if (!b) return;
     const x = { street: b.dataset.streetAdd, place: b.dataset.streetPlace };
@@ -2509,6 +2733,11 @@
     $('#s-street-search').value = ''; renderDeliveryStreets();
   });
   $('#s-streets-selected').addEventListener('click', e => {
+    if (e.target.closest('[data-street-clear]')) { if (confirm('Alle Zustellstraßen entfernen?')) { editingDeliveryStreets = []; renderDeliveryStreets(); } return; }
+    const lr = e.target.closest('[data-learn-remove]');
+    if (lr) { const l = Object.assign({}, settings.learn); delete l[lr.dataset.learnRemove]; settings.learn = l; persist(); renderDeliveryStreets(); return; }
+    const fr = e.target.closest('[data-fix-remove]');
+    if (fr) { const f = Object.assign({}, settings.fix); delete f[fr.dataset.fixRemove]; settings.fix = f; persist(); renderDeliveryStreets(); return; }
     const b = e.target.closest('[data-street-remove]'); if (!b) return;
     editingDeliveryStreets = editingDeliveryStreets.filter(x => deliveryStreetKey(x) !== b.dataset.streetRemove); renderDeliveryStreets();
   });
@@ -2567,6 +2796,7 @@
     $('#s-meicon').innerHTML = Object.entries(ME_ICONS).map(([k, v]) => `<button data-mi="${k}" aria-pressed="${(settings.meIcon || 'arrow') === k}">${v.name.replace('Gelber ', '')}</button>`).join('');
     $('#s-meicon').onclick = e => { const b = e.target.closest('[data-mi]'); if (!b) return; settings.meIcon = b.dataset.mi; persist(); Me.redraw(); $('#s-meicon').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
     renderAreaChips($('#s-area'));
+    renderPrioSettings();
     editingDeliveryStreets = (settings.deliveryStreets || []).map(x => ({ street: x.street, place: x.place }));
     $('#s-street-search').value = ''; renderDeliveryStreets();
     $('#s-tomtom').value = settings.tomtom || '';
@@ -2665,6 +2895,7 @@
   /* ---------- Start ---------- */
   function startApp() {
     $('#app').hidden = false;
+    Geo.setStreetList(settings.deliveryStreets || []);
     Geo.setKeys({ tomtom: settings.tomtom, here: settings.here });
     applyArea(); renderAreaCard();
     if (imported) setTimeout(() => toast('Einrichtung übernommen – gleiche Einstellungen wie auf dem anderen Gerät', 4500), 400);

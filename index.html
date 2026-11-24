@@ -157,6 +157,7 @@
           </div>
           <div class="problem" id="problem" hidden></div>
           <ol class="stops" id="stop-list"></ol>
+          <button class="link prio-link" id="prio-btn" type="button">Straßen-Reihenfolge festlegen (zuerst / zuletzt)</button>
           <button class="btn primary wide big" id="optimize-btn">
             <svg viewBox="0 0 24 24"><path d="M4 19c4-10 12-4 16-14"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg>
             Route optimieren
@@ -196,6 +197,7 @@
             <button class="map-fab locate" id="map-locate" aria-label="Mein Standort"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
             <button class="map-fab zoomstop" id="map-zoom" aria-label="Zum nächsten Stopp zoomen an/aus"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Stopp</span></button>
             <button class="map-fab depot" id="map-depot" aria-label="Zum Depot" hidden><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg></button>
+            <button class="map-fab tilt" id="map-3d" aria-label="3D-Ansicht an/aus"><span>3D</span></button>
             <button class="map-fab layers" id="map-layers" aria-label="Kartenstil wechseln"><svg viewBox="0 0 24 24"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 16.5 9.5 5 9.5-5" opacity=".5"/></svg></button>
             <button class="poi-chip" id="poi-chip" hidden></button>
             <div class="map-bar" id="map-bar" hidden></div>
@@ -241,8 +243,13 @@
         <h3 class="mini">Orte in deinem Gebiet</h3>
         <p class="sheet-note" id="s-area-note">Antippen zum An- oder Abwählen. Straßen dort werden bevorzugt, Adressen außerhalb werden markiert.</p>
         <div class="area-chips" id="s-area"></div>
-        <h3 class="mini">Zustellstraßen</h3>
-        <p class="sheet-note">Wähle häufige oder gleichnamige Straßen mit ihrem Ort aus. Das hilft bei der Adresszuordnung und bündelt Stopps in Sackgassen. Andere Adressen bleiben möglich.</p>
+        <h3 class="mini">Zustellstraßen <small class="muted" id="s-streets-count"></small></h3>
+        <p class="sheet-note">Die Straßen, die du fährst (z. B. die Liste von deinem Zustellstützpunkt). Diktierte oder vertippte Straßennamen werden auf diese Liste korrigiert, gleichnamige Straßen bekommen den richtigen Ort. Andere Adressen bleiben möglich.</p>
+        <details class="s-bulk" id="s-bulk">
+          <summary>Straßenliste einfügen</summary>
+          <textarea id="s-street-bulk" rows="6" placeholder="Eine Straße pro Zeile, z. B.&#10;Hauptstraße&#10;Lindenweg&#10;Am Markt, Wittingen"></textarea>
+          <div class="s-bulk-row"><button type="button" class="btn ghost" id="s-street-bulk-go">Übernehmen</button><small class="muted" id="s-street-bulk-note"></small></div>
+        </details>
         <label class="field"><span>Straße suchen</span><input id="s-street-search" type="search" autocomplete="off" placeholder="z. B. Hauptstraße"></label>
         <div class="area-street-suggest" id="s-street-suggest" hidden></div>
         <div class="area-streets-selected" id="s-streets-selected"></div>
@@ -251,6 +258,9 @@
       <div class="s-page" data-page="route" data-title="Tour &amp; Navigation" hidden>
         <h3 class="mini">Navigations-App</h3>
         <div class="choice-grid compact" id="s-nav"></div>
+        <h3 class="mini">Straßen-Vorrang</h3>
+        <p class="sheet-note">Straßen, die immer zuerst oder zuletzt drankommen. Festlegen beim Antippen eines Stopps oder unter „Reihenfolge“ in der Route.</p>
+        <div class="prio-list" id="s-prio"></div>
         <label class="switch">
           <input type="checkbox" id="s-roundtrip">
           <span class="track"><span class="thumb"></span></span>
