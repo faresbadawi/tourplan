@@ -1442,3 +1442,20 @@ button, a, input, textarea, select, label { touch-action: manipulation; }
 .map, .map *, .region-map, .region-map * { touch-action: none; }
 /* iPhone/iPad zoomen beim Antippen von Feldern mit Schrift unter 16 px hinein → mindestens 16 px */
 @media (pointer: coarse) { input, textarea, select { font-size: max(16px, 1em) !important; } }
+
+/* Fußweg-Hinweis: grünes Schild, weißer Rand, weiße Schrift */
+.map-bar .mb-walk, .map-bar .mb-info .mb-walk { display: inline-flex !important; align-items: center; gap: 5px; width: fit-content; margin-top: 6px; padding: 4px 10px;
+  border-radius: 999px; background: #12A46B; border: 2px solid #fff; color: #fff !important; font: 800 12.5px/1.2 var(--sans); white-space: normal; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+
+/* Leiste unten: Stopp-Nummer im Look der Karten-Blase, Fortschritt als kleine Ringe in der Legende */
+.map-bar .mb-pin { flex: none; width: 50px; height: 50px; box-sizing: border-box; border-radius: 15px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 3px solid #fff; color: #fff; font: 800 21px/1 var(--sans);
+  font-variant-numeric: tabular-nums; box-shadow: 0 3px 10px rgba(0,0,0,.35); }
+.map-bar .mb-pin svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2.4; }
+.map-bar .mb-legend i { display: none; }
+.map-bar .mb-legend .mini-ring { width: 17px; height: 17px; flex: none; transform: rotate(-90deg); }
+.mini-ring circle { fill: none; stroke-width: 3; }
+.mini-ring .bg { stroke: rgba(255,255,255,.18); }
+.mini-ring .fg { stroke-linecap: round; transition: stroke-dashoffset .6s var(--spring); }
+.mini-ring.mr-pk .fg { stroke: var(--accent); }
+.mini-ring.mr-st .fg { stroke: var(--ok); }

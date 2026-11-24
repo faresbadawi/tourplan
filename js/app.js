@@ -691,16 +691,24 @@
             gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 7, 17, 12], 'line-opacity': .6 } }, sym);
             gl.addLayer({ id: 'tp-route-line', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 7], 'line-opacity': .95 } }, sym);
           } else { gl.getSource('tp-route').setData(line(parts.todo)); gl.getSource('tp-route-done').setData(line(parts.done)); }
-          // Ring um jede Stopp-Adresse – liegt UNTER den Hausnummern, die Nummer bleibt lesbar
-          const ring = { type: 'FeatureCollection', features: route && geom ? route.order.map((id, i) => { const st = stopById(id); return st ? { type: 'Feature', properties: { s: route.done[id] === 'skip' ? 'skip' : route.done[id] ? 'done' : i === currentIndex() ? 'cur' : 'open' }, geometry: { type: 'Point', coordinates: [st.lon, st.lat] } } : null; }).filter(Boolean) : [] };
+          // Stopp-Adresse: gefüllter Kreis mit der Hausnummer groß in Weiß (blau = offen, grau = erledigt, orange = übersprungen)
+          const cIdx = route ? currentIndex() : -1;
+          const ring = { type: 'FeatureCollection', features: route && geom ? route.order.map((id, i) => { const st = stopById(id); if (!st) return null;
+            const hn = st.poi ? '' : (Geo.parseQuery(st.query).housenumber || '');
+            return { type: 'Feature', properties: { s: route.done[id] === 'skip' ? 'skip' : route.done[id] ? 'done' : i === cIdx ? 'cur' : 'open', hn }, geometry: { type: 'Point', coordinates: [st.lon, st.lat] } }; }).filter(Boolean) : [] };
+          const col = ['match', ['get', 's'], 'done', '#8E99AB', 'skip', '#F57C00', accent];
           if (!gl.getSource('tp-stops')) {
             gl.addSource('tp-stops', { type: 'geojson', data: ring });
-            const hn = gl.getLayer('tp-housenumber') ? 'tp-housenumber' : sym;
             gl.addLayer({ id: 'tp-stop-ring', type: 'circle', source: 'tp-stops', paint: {
-              'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 4, 16, 9, 18, 15, 20, 20],
-              'circle-color': ['match', ['get', 's'], 'done', '#8E99AB', 'skip', '#F57C00', accent], 'circle-opacity': ['match', ['get', 's'], 'cur', .35, .22],
-              'circle-stroke-width': ['match', ['get', 's'], 'cur', 3.5, 2.5], 'circle-stroke-color': ['match', ['get', 's'], 'done', '#8E99AB', 'skip', '#F57C00', accent] } }, hn);
+              'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 4, 15.5, 7, 16.5, 12, 18, 15, 20, 19],
+              'circle-color': col, 'circle-opacity': 1,
+              'circle-stroke-width': ['match', ['get', 's'], 'cur', 3.5, 2.5], 'circle-stroke-color': '#FFFFFF' } });
+            gl.addLayer({ id: 'tp-stop-hn', type: 'symbol', source: 'tp-stops', minzoom: 16,
+              layout: { 'text-field': ['get', 'hn'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 12, 18, 15, 20, 19],
+                'text-allow-overlap': true, 'text-ignore-placement': true },
+              paint: { 'text-color': '#FFFFFF', 'text-halo-color': 'rgba(0,0,0,.35)', 'text-halo-width': 1 } });
           } else gl.getSource('tp-stops').setData(ring);
+          gl.setPaintProperty('tp-stop-ring', 'circle-color', col);
           // vor dir: kräftiges Blau mit Rand · gefahren: Grau
           gl.setPaintProperty('tp-route-case', 'line-color', dark ? '#000' : '#fff');
           gl.setPaintProperty('tp-route-line', 'line-color', accent);
@@ -2457,10 +2465,10 @@
     const pkDone = Math.max(0, pkTotal - pkLeft);
     const closed = n - open.length;
     progress.hidden = true; progress.innerHTML = '';
-    // Ein Doppelring: außen Pakete, innen Stopps – in der Mitte die Nummer des nächsten Stopps
-    const arc = (r, f, cls) => { const C = 2 * Math.PI * r; return `<circle class="bg" cx="26" cy="26" r="${r}"/><circle class="fg ${cls}" cx="26" cy="26" r="${r}" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - Math.min(1, Math.max(0, f)))}"/>`; };
-    const ringHtml = `<div class="mb-ring" aria-label="${pkLeft} Pakete und ${open.length} Stopps übrig"><svg viewBox="0 0 52 52" aria-hidden="true">${arc(23, pkTotal ? pkDone / pkTotal : 1, 'pk')}${arc(16.5, n ? closed / n : 1, 'st')}</svg><b>${cur !== -1 ? cur + 1 : HOME_ICON}</b></div>`;
-    const legend = `<span class="mb-legend"><span class="lg lg-pk"><i></i><b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'}</span><span class="lg lg-st"><i></i><b>${open.length}</b> Stopp${open.length === 1 ? '' : 's'} übrig</span></span>`;
+    // Stopp-Nummer wie die Blase auf der Karte; Fortschritt als kleine Ringe direkt bei „Pakete“ und „Stopps übrig“
+    const mini = (f, cls) => { const C = 2 * Math.PI * 7; return `<svg class="mini-ring ${cls}" viewBox="0 0 18 18" aria-hidden="true"><circle class="bg" cx="9" cy="9" r="7"/><circle class="fg" cx="9" cy="9" r="7" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - Math.min(1, Math.max(0, f)))}"/></svg>`; };
+    const ringHtml = `<span class="mb-pin${cur === -1 ? ' home' : ''}" aria-label="Stopp ${cur + 1}">${cur !== -1 ? cur + 1 : HOME_ICON}</span>`;
+    const legend = `<span class="mb-legend"><span class="lg lg-pk">${mini(pkTotal ? pkDone / pkTotal : 1, 'mr-pk')}<b>${pkLeft}</b> Paket${pkLeft === 1 ? '' : 'e'}</span><span class="lg lg-st">${mini(n ? closed / n : 1, 'mr-st')}<b>${open.length}</b> Stopp${open.length === 1 ? '' : 's'} übrig</span></span>`;
     // Straße + Hausnummer aus der Eingabe (das Label beginnt manchmal mit einem Geschäftsnamen)
     const parsed = cur !== -1 && !s.poi ? Geo.parseQuery(s.query) : null;
     const street = cur !== -1 ? (s.poi ? s.label.split(',')[0] : parsed.street) : (route.roundtrip ? 'Zurück zum Depot' : 'Tour geschafft');
@@ -2470,7 +2478,7 @@
     const sub = cur !== -1 ? [town, fmtDur(route.legs[cur].dur), s.pk ? pkLabel(s.pk) : ''].filter(Boolean).join(' · ') : `Alle ${n} Stopps erledigt`;
     const previous = cur > 0 ? stopById(route.order[cur - 1]) : null;
     const walkM = previous && s && Number.isFinite(s.lat) && Number.isFinite(s.lon) ? Math.round(Geo.haversine(previous.lat, previous.lon, s.lat, s.lon)) : Infinity;
-    const walkHint = previous && walkM <= 300 ? `<span class="mb-walk">${walkM} m vom letzten Stopp · zu Fuß prüfen</span>` : '';
+    const walkHint = previous && walkM <= 300 ? `<span class="mb-walk"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2-6 3 3v3M8 12l2.5-4 3 1.5 2 3.5M12.5 15l-1-4"/></svg>Nur ${walkM} m – zu Fuß gehen</span>` : '';
     const zi = cur !== -1 ? zoneIdx(s.id) : null;
     bar.innerHTML = `
       <div class="mb-top">${ringHtml}

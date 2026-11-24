@@ -208,3 +208,9 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 ## Version 27
 
 - Die App-Seite lässt sich nicht mehr versehentlich zoomen (Zwei-Finger-Zoom, Doppeltippen, Hineinzoomen beim Antippen von Eingabefeldern auf iPhone/iPad). Die Karte zoomt weiterhin normal.
+
+## Version 28
+
+- Stopp-Adresse auf der Karte: kräftig gefüllter Kreis mit weißem Rand und der Hausnummer groß in Weiß (blau = offen, grau = erledigt, orange = übersprungen).
+- Fußweg-Hinweis in der Leiste als grünes Schild mit weißem Rand, weißer Schrift und Fußgänger-Symbol („Nur 48 m – zu Fuß gehen“).
+- Leiste unten: Stopp-Nummer sieht aus wie die Blase auf der Karte; der Fortschritt steht als kleine Ringe direkt bei „Pakete“ und „Stopps übrig“ (statt Doppelring).
