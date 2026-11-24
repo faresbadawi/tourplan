@@ -1547,6 +1547,10 @@
     </div>`);
   };
 
+  /* iPhone/iPad (Safari) ignoriert „user-scalable=no“ → Zoom-Gesten außerhalb der Karte selbst abfangen */
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => { if (!e.target.closest || !e.target.closest('.map, .region-map')) e.preventDefault(); }, { passive: false }));
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !e.target.closest('.map, .region-map')) e.preventDefault(); }, { passive: false });
+  // Doppeltippen-Zoom verhindert „touch-action: manipulation“ (CSS) – schnelles Tippen auf Knöpfe bleibt möglich
   document.addEventListener('focusin', e => { if (e.target.matches('input, textarea')) document.body.classList.add('typing'); });
   document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement.matches('input, textarea')) document.body.classList.remove('typing'); }, 50));
 

@@ -204,3 +204,7 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 
 - Hausnummern nicht mehr verdeckt: Die Adresse wird mit einem farbigen Ring direkt auf der Karte markiert – die Hausnummer liegt obendrauf und bleibt lesbar (blau = offen, grau = erledigt, orange = übersprungen). Die Blase mit der Stopp-Nummer schwebt darüber.
 - Fenster beim Antippen einer Blase: klein, zwei Zeilen – oben Paket-Symbol mit Anzahl, Bereich (wie an der Blase), darunter grüner Haken (erledigt), oranger Überspringen-Knopf, blauer Listen-Knopf.
+
+## Version 27
+
+- Die App-Seite lässt sich nicht mehr versehentlich zoomen (Zwei-Finger-Zoom, Doppeltippen, Hineinzoomen beim Antippen von Eingabefeldern auf iPhone/iPad). Die Karte zoomt weiterhin normal.
