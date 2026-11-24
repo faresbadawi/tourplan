@@ -434,7 +434,8 @@
     return { version: 8, glyphs: OFM + '/fonts/{fontstack}/{range}.pbf',
       sources: { base: { type: 'raster', tiles, tileSize: 256, maxzoom: 19, attribution: st.attr } },
       layers: [{ id: 'bg', type: 'background', paint: { 'background-color': dark ? '#161E2D' : '#EEF1F5' } },
-        { id: 'base', type: 'raster', source: 'base', paint: st.filter && dark ? { 'raster-brightness-max': .8, 'raster-saturation': -.5, 'raster-contrast': -.1 } : {} }] };
+        // Dunkel wie früher (invertiert): hell ↔ dunkel tauschen, Farbton zurückdrehen, etwas entsättigen
+        { id: 'base', type: 'raster', source: 'base', paint: st.filter && dark ? { 'raster-brightness-min': .86, 'raster-brightness-max': .06, 'raster-hue-rotate': 180, 'raster-saturation': -.4, 'raster-contrast': -.05, 'raster-fade-duration': 0 } : { 'raster-fade-duration': 0 } }] };
   }
   class GLLayer {
     constructor(map) { this.map = map; this.items = new Set(); }
@@ -462,7 +463,7 @@
       const map = this.owner.map;
       map.closePopup();
       const o = this.popOpt || {};
-      this.pp = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: o.offset || 24, className: o.className || '', maxWidth: (o.maxWidth || 240) + 'px', anchor: 'bottom' })
+      this.pp = new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: o.offset || 24, className: o.className || '', maxWidth: (o.maxWidth || 240) + 'px' })
         .setLngLat(this.p).setHTML(this.popHtml).addTo(map.gl);
       map.openPop = this; this.fire('popupopen');
       this.pp.on('close', () => { if (map.openPop === this) map.openPop = null; this.fire('popupclose'); });
@@ -508,9 +509,10 @@
     }
     /** Pop-up nicht unter Leisten verstecken */
     keepVisible(ll, top, bottom) {
-      const pt = this.gl.project(ll), H = this.gl.getContainer().clientHeight;
-      const need = pt.y - 230 < top ? pt.y - 230 - top : pt.y > H - bottom ? pt.y - (H - bottom) : 0;
-      if (need) this.gl.panBy([0, need], { duration: 300 });
+      const pt = this.gl.project(ll), H = this.gl.getContainer().clientHeight, W = this.gl.getContainer().clientWidth;
+      const need = pt.y - 250 < top ? pt.y - 250 - top : pt.y > H - bottom ? pt.y - (H - bottom) : 0;
+      const half = 122, side = pt.x - half < 8 ? pt.x - half - 8 : pt.x + half > W - 8 ? pt.x + half - (W - 8) : 0;   // nicht links/rechts abschneiden
+      if (need || side) this.gl.panBy([side, need], { duration: 300 });
     }
   }
   /** Kreis (Genauigkeit des Standorts) als GeoJSON-Polygon */
@@ -544,6 +546,11 @@
       this.map.gl.on('rotate', () => Me.rotate());
       this.map.gl.on('pitchend', () => this.sync3d()); this.map.gl.on('rotateend', () => this.sync3d());
       this.map.gl.on('click', () => this.map.closePopup());
+      this.tileErr = 0;
+      this.map.gl.on('error', e => {          // Kacheln dieses Stils lassen sich nicht laden → einmal Bescheid geben
+        if (!e || !e.sourceId || e.sourceId !== 'base') return;
+        if (++this.tileErr === 12) toast('Dieser Kartenstil lädt gerade nicht – über den Ebenen-Knopf einen anderen wählen', 4000);
+      });
       return this.map;
     },
     /** 3D-Knopf: Karte neigen (Gebäude in 3D) oder wieder flach und nach Norden */
@@ -562,6 +569,7 @@
       let style = st.vector ? await vecStyle(dark, true) : rasterStyle(st, dark);
       if (token !== this.styleToken) return;
       if (!style) { toast('Karte gerade nicht erreichbar – Kartenstil „Deutschland“ wird genutzt', 3500); style = rasterStyle(MAP_STYLES.de, dark); }
+      this.tileErr = 0;
       this.map.gl.setStyle(style, { diff: false });
     },
     cycleStyle() {
@@ -572,8 +580,10 @@
       $('#map-wrap').appendChild(chip); setTimeout(() => chip.remove(), 1400);
     },
     // Stopp-Nadel steht ÜBER der Adresse (Spitze zeigt aufs Haus) → die Hausnummer darunter bleibt lesbar
+    // Punkt genau auf der Adresse, Blase schräg darüber daneben → Hausnummer (knapp unter dem Punkt) bleibt frei
     pin(p, html, cls, center) {
-      return new GLMarker(p, { html: `<div class="pin ${cls || ''}">${html}</div>${center ? '' : '<i class="pin-stem"></i>'}`, anchor: center ? 'center' : 'bottom' });
+      if (center) return new GLMarker(p, { html: `<div class="pin ${cls || ''}">${html}</div>` });
+      return new GLMarker(p, { html: `<div class="pin-side ${cls || ''}"><i class="pin-dot"></i><div class="pin ${cls || ''}">${html}</div></div>`, anchor: 'bottom-left', offset: [-5, 5] });
     },
     render(refit) {
       const depot = settings.depot;
@@ -599,10 +609,10 @@
             <div class="pp-head"><span class="pp-n">${i + 1}</span><div class="pp-adr"><b>${esc(street)}</b><small>${esc(town)}</small></div></div>
             <div class="pp-pk">${ICON.box}<b>${pk}</b><span>Paket${pk === 1 ? '' : 'e'}</span>${zi != null ? `<span class="pp-zone" style="--zc:${ZONE_COLORS[zi]}">Bereich ${ZONE_LETTERS[zi]}</span>` : ''}</div>
             <div class="pp-act">${route.done[id] ? '' : `<button type="button" class="ok" data-pin-done="${id}">Erledigt</button><button type="button" data-pin-skip="${id}">Überspringen</button>`}<button type="button" data-pin-focus="${id}">In Liste</button></div></div>`,
-            { offset: 46, className: 'pin-popup', padTop: this.full ? 80 : 10, padBottom: this.full && !wide() ? 200 : 16, maxWidth: 224 })
+            { offset: { bottom: [8, -40], top: [8, 6], left: [14, -16], right: [0, -16], 'bottom-left': [8, -40], 'bottom-right': [8, -40], 'top-left': [8, 6], 'top-right': [8, 6] }, className: 'pin-popup', padTop: this.full ? 80 : 10, padBottom: this.full && !wide() ? 200 : 16, maxWidth: 224 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
           if (this.popId === id) this.reopen = mk;
-          this.pinEls[id] = mk.getElement().firstElementChild;
+          this.pinEls[id] = mk.getElement().querySelector('.pin');
           if (cls === 'current') mk.setZIndexOffset(1000);
           bounds.push([s.lat, s.lon]);
         });
@@ -631,23 +641,64 @@
       }, 50);
     },
     /** Vektorkarte: Route unter die Straßennamen legen, damit Namen und Hausnummern lesbar bleiben */
+    /** Wo liegt jeder Stopp auf der Routenlinie? (Index des nächsten Linienpunkts, der Reihe nach) */
+    stopIdx() {
+      const G = route.geometry, key = route.order.join() + '|' + G.length;
+      if (this._idxKey === key) return this._idx;
+      const out = []; let from = 0;
+      route.order.forEach(id => {
+        const s = stopById(id); let best = from, bd = Infinity;
+        if (s) for (let j = from; j < G.length; j++) { const d = (G[j][0] - s.lat) ** 2 + ((G[j][1] - s.lon) * .62) ** 2; if (d < bd) { bd = d; best = j; } }
+        out.push(best); from = best;
+      });
+      this._idxKey = key; this._idx = out; return out;
+    },
+    /** Route teilen: schon gefahren (grau) und noch vor dir (blau) – ab deinem Standort, sonst ab dem letzten erledigten Stopp */
+    routeParts() {
+      const G = route.geometry; if (!G || G.length < 2) return { done: [], todo: G || [] };
+      const cur = currentIndex(); if (cur === -1) return { done: G, todo: [] };
+      const idx = this.stopIdx();
+      const lo = cur > 0 ? idx[cur - 1] : 0, hi = idx[cur];
+      let k = lo, me = null;
+      const pos = Me.pos && Date.now() - (Me.pos.t || 0) < 60000 ? Me.pos : null;
+      if (pos && hi > lo) {                     // Standort auf das Stück bis zum nächsten Stopp legen
+        let bd = Infinity, bj = lo;
+        for (let j = lo; j <= hi; j++) { const d = Geo.haversine(G[j][0], G[j][1], pos.lat, pos.lon); if (d < bd) { bd = d; bj = j; } }
+        if (bd < 150) { k = bj; me = [pos.lat, pos.lon]; }
+      }
+      const done = G.slice(0, k + 1), todo = G.slice(k);
+      if (me) { done.push(me); todo.unshift(me); }
+      return { done, todo };
+    },
+    /** Vektorkarte: Route unter die Straßennamen legen, damit Namen und Hausnummern lesbar bleiben */
     glRoute(gl, geom, accent) {
+      const line = c => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: (c || []).map(([a, b]) => [b, a]) } });
       const run = () => {
         try {
           const dark = mapDark(), sym = (gl.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
-          const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: (geom || []).map(([a, b]) => [b, a]) } };
+          const parts = geom && route ? this.routeParts() : { done: [], todo: geom || [] };
           if (!geom && !gl.getSource('tp-route')) return;
           if (!gl.getSource('tp-route')) {
-            gl.addSource('tp-route', { type: 'geojson', data });
-            gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 10, 'line-opacity': .55 } }, sym);
-            gl.addLayer({ id: 'tp-route-line', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': 6, 'line-opacity': .9 } }, sym);
-          } else gl.getSource('tp-route').setData(data);
+            gl.addSource('tp-route-done', { type: 'geojson', data: line(parts.done) });
+            gl.addSource('tp-route', { type: 'geojson', data: line(parts.todo) });
+            gl.addLayer({ id: 'tp-route-done', type: 'line', source: 'tp-route-done', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 17, 6], 'line-opacity': .85 } }, sym);
+            gl.addLayer({ id: 'tp-route-case', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 7, 17, 12], 'line-opacity': .6 } }, sym);
+            gl.addLayer({ id: 'tp-route-line', type: 'line', source: 'tp-route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 7], 'line-opacity': .95 } }, sym);
+          } else { gl.getSource('tp-route').setData(line(parts.todo)); gl.getSource('tp-route-done').setData(line(parts.done)); }
+          // vor dir: kräftiges Blau mit Rand · gefahren: Grau
           gl.setPaintProperty('tp-route-case', 'line-color', dark ? '#000' : '#fff');
           gl.setPaintProperty('tp-route-line', 'line-color', accent);
+          gl.setPaintProperty('tp-route-done', 'line-color', dark ? '#6B7689' : '#9AA3B2');
         } catch (e) { console.warn('Route in Vektorkarte:', e); }
       };
       const tryRun = n => { if (gl.isStyleLoaded()) run(); else if (n < 80) setTimeout(() => tryRun(n + 1), 250); };
       tryRun(0);
+    },
+    /** Bei neuer Position nur die Linie nachziehen (höchstens alle 3 s) */
+    progress() {
+      if (!this.map || !route || Date.now() - (this._progT || 0) < 3000) return;
+      this._progT = Date.now();
+      this.glRoute(this.map.gl, route.geometry, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
     },
     onBase() { if (this.map && settings.depot) this.render(); },
     renderPois() {
@@ -795,6 +846,7 @@
         if (!this.marker) this.marker = new GLMarker([c.latitude, c.longitude], { z: 2000, html: this.html() }).addTo(m);
         else this.marker.setLatLng([c.latitude, c.longitude]);
         this.accPos = { lat: c.latitude, lon: c.longitude, r: c.accuracy }; this.accDraw();
+        Map_.progress();
         this.rotate();
         if (this.follow) {
           if (this.first) { m.setView([c.latitude, c.longitude], Math.max(m.getZoom(), 17)); this.first = false; }

@@ -181,3 +181,10 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - **Karte jetzt direkt mit MapLibre:** mit zwei Fingern neigen (3D-Gebäude) und drehen, 3D-Knopf im Vollbild, Kompass/Zoom-Knöpfe.
 - **Hausnummern sichtbar:** Stopp-Nadeln stehen über der Adresse (Spitze zeigt aufs Haus), Hausnummern sitzen knapp darunter.
 - **Vollbild-Leiste:** dunkel mit großer weißer Straße und weißem Hausnummern-Schild; ein Doppelring (außen Pakete, innen Stopps, Mitte Stopp-Nummer) mit kurzer Legende.
+
+## Version 23
+
+- Fehler behoben: Kartenstile „Deutschland“, „Klar“, „Standard“ und „Satellit“ blieben leer (alte gespeicherte Kacheln waren für die neue Karte unlesbar). Dunkelmodus dieser Stile wieder wie früher invertiert.
+- Route zweifarbig: vor dir kräftig blau, schon gefahren grau – ab deinem Standort (sonst ab dem letzten erledigten Stopp), wird beim Fahren nachgezogen.
+- Stopps: kleiner Punkt genau auf der Adresse, Blase schräg daneben (ohne Strich) – die Hausnummer bleibt frei. Paketzahl unten rechts an der Blase.
+- Fenster am Punkt wird nicht mehr am Rand abgeschnitten.

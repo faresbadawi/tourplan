@@ -1375,3 +1375,18 @@ body.map-full .map-wrap.full .maplibregl-ctrl-bottom-left { bottom: calc(196px +
 .s-bulk-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .s-bulk-row small { flex: 1 1 160px; }
 .link.danger { color: var(--danger, #d33); }
+
+/* Version 23: Punkt auf der Adresse, Blase schräg daneben (ohne Strich) – Hausnummer bleibt frei */
+.gl-mk .pin-side { position: relative; width: 50px; height: 48px; pointer-events: none; }
+.gl-mk .pin-side > * { pointer-events: auto; }
+.gl-mk .pin-dot { position: absolute; left: 0; bottom: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); box-sizing: border-box; }
+.gl-mk .pin-side .pin { position: absolute; left: 13px; bottom: 13px; margin: 0; }
+.gl-mk .pin-side .pin.current { transform-origin: 0 100%; }
+.gl-mk .pin-side.done .pin-dot { background: #8E99AB; }
+.gl-mk .pin-side.skipped .pin-dot { background: #d9a526; }
+.gl-mk .pin-side.current .pin-dot { width: 12px; height: 12px; left: -1px; bottom: -1px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), 0 1px 4px rgba(0,0,0,.45); }
+.gl-mk .pin-side.done { opacity: .8; }
+/* Paketzahl unten rechts in der Blase, Bereich oben rechts – nichts ragt mehr nach links */
+.gl-mk .pin .ppk { top: auto; left: auto; bottom: -7px; right: -9px; min-width: 16px; height: 16px; font-size: 9.5px; border-radius: 6px; }
+.gl-mk .pin .pz { top: -8px; right: -9px; }
+.gl-mk .pin.current .ppk, .gl-mk .pin.current .pz { transform: none; }

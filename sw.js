@@ -1,5 +1,5 @@
-const CACHE = 'tourplan-v44';
-const TILES = 'tourplan-tiles', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
+const CACHE = 'tourplan-v45';
+const TILES = 'tourplan-tiles2', OFFLINE = 'tourplan-offline', MAX_TILES = 6000;
 let puts = 0;
 const trim = c => c.keys().then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - MAX_TILES)).map(k => c.delete(k))));
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/geo.js', 'js/optimize.js', 'js/speech.js', 'js/ai.js', 'js/app.js', 'vendor/leaflet.min.js', 'vendor/leaflet.min.css', 'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css', 'vendor/leaflet-maplibre-gl.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
@@ -15,8 +15,10 @@ self.addEventListener('fetch', e => {
   // Kartenkacheln: gespeicherte (Offline-Gebiet oder schon gesehen) zuerst, sonst laden und merken
   if (TILE_HOST.test(u.hostname)) {
     const key = tileKey(u.href);
-    e.respondWith(caches.match(key).then(hit => hit || fetch(e.request).then(r => {
-      if (r.ok || r.type === 'opaque') { const c = r.clone(); caches.open(TILES).then(x => { x.put(key, c); if (++puts % 200 === 0) trim(x); }); }
+    // Die Karte (MapLibre/WebGL) lädt Kacheln per CORS → nie „undurchsichtige“ Antworten aus dem Speicher geben oder speichern
+    const cors = e.request.mode === 'cors';
+    e.respondWith(caches.match(key).then(hit => (hit && !(cors && hit.type === 'opaque')) ? hit : fetch(e.request).then(r => {
+      if (r.ok && r.type !== 'opaque') { const c = r.clone(); caches.open(TILES).then(x => { x.put(key, c); if (++puts % 200 === 0) trim(x); }); }
       return r;
     })));
     return;
