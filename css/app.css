@@ -1413,3 +1413,21 @@ body.map-full .map-wrap.full .maplibregl-ctrl-bottom-left { bottom: calc(196px +
 .tray [data-skip], .pp-act button[data-pin-skip] { background: color-mix(in srgb, var(--skip) 16%, var(--surface)) !important; color: var(--skip) !important; border-color: color-mix(in srgb, var(--skip) 45%, transparent) !important; }
 .map-bar .mb-info .mb-zone { display: grid; place-items: center; overflow: visible; white-space: nowrap; color: #fff; font: 800 16px/1 var(--sans); padding: 0 6px; width: auto; min-width: 30px; height: 30px; }
 .pp-pk .pp-zone { white-space: nowrap; }
+
+/* Version 26: Blase schwebt über der Adresse, Ring auf der Karte markiert das Haus (Hausnummer bleibt oben lesbar) */
+.gl-mk .pin { box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+/* Kleines Fenster am Punkt: nur Symbole */
+.pq-popup .maplibregl-popup-content { width: auto !important; padding: 6px; border-radius: 18px; }
+.pq { display: flex; align-items: center; gap: 6px; font-family: var(--sans); }
+.pq-pk { display: inline-flex; align-items: center; gap: 4px; height: 38px; padding: 0 10px 0 8px; border-radius: 12px; background: var(--surface-2); color: var(--text); }
+.pq-pk svg { width: 20px; height: 20px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pq-pk b { font: 800 18px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.pq-zone { display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0 6px; box-sizing: border-box; border-radius: 9px; background: var(--zc); border: 2.5px solid #fff; color: #fff; font: 800 15px/1 var(--sans); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.pq-sep { width: 1px; height: 26px; background: var(--border); margin: 0 1px; }
+.pq-b { width: 40px; height: 40px; border-radius: 12px; border: 0; display: grid; place-items: center; color: #fff; padding: 0; cursor: pointer; }
+.pq-b svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.pq-b.ok { background: var(--ok); }
+.pq-b.skip { background: var(--skip, #F57C00); }
+.pq-b.list { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.pq-b:active { transform: scale(.92); }
+.pq-b, .pq-b.ok { border: 0 !important; box-shadow: 0 2px 6px rgba(0,0,0,.25); }

@@ -199,3 +199,8 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Leiste unten: Straße, Hausnummer und Bereich immer in einer Zeile – die Schrift wird bei langen Namen kleiner, sehr lange „…straße“ werden zu „…str.“.
 - Überspringen überall in Orange.
 - Einstellungen: „Daten sichern (Export)“ speichert Verlauf, Einstellungen, Straßenliste, Gemerktes, Fahrzeugfotos und die offene Tour als Datei; „Daten wiederherstellen (Import)“ lädt sie wieder (Verlauf wird zusammengeführt, nichts geht verloren).
+
+## Version 26
+
+- Hausnummern nicht mehr verdeckt: Die Adresse wird mit einem farbigen Ring direkt auf der Karte markiert – die Hausnummer liegt obendrauf und bleibt lesbar (blau = offen, grau = erledigt, orange = übersprungen). Die Blase mit der Stopp-Nummer schwebt darüber.
+- Fenster beim Antippen einer Blase: nur noch eine schmale Leiste mit Symbolen – Paket-Symbol mit Anzahl, Bereich (wie an der Blase), grüner Haken (erledigt), oranger Überspringen-Knopf, blauer Listen-Knopf.
