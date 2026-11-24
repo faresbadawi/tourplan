@@ -510,7 +510,7 @@
     /** Pop-up nicht unter Leisten verstecken */
     keepVisible(ll, top, bottom) {
       const pt = this.gl.project(ll), H = this.gl.getContainer().clientHeight, W = this.gl.getContainer().clientWidth;
-      const need = pt.y - 120 < top ? pt.y - 120 - top : pt.y > H - bottom ? pt.y - (H - bottom) : 0;
+      const need = pt.y - 160 < top ? pt.y - 160 - top : pt.y > H - bottom ? pt.y - (H - bottom) : 0;
       const half = 120, side = pt.x - half < 8 ? pt.x - half - 8 : pt.x + half > W - 8 ? pt.x + half - (W - 8) : 0;   // nicht links/rechts abschneiden
       if (need || side) this.gl.panBy([side, need], { duration: 300 });
     }
@@ -613,9 +613,8 @@
           const zi = route.done[id] ? null : zoneIdx(id);
           const badges = `<i class="ppk" title="${pk} Paket${pk === 1 ? '' : 'e'}">${pk}</i>${zi != null ? `<i class="pz" style="--zc:${ZONE_COLORS[zi]}" title="Bereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</i>` : ''}`;
           const mk = this.pin(s, i + 1 + badges, cls).bindPopup(`<div class="pq" title="${esc(street)}${town ? ', ' + esc(town) : ''}">
-            <span class="pq-pk" title="${pk} Paket${pk === 1 ? '' : 'e'}">${ICON.box}<b>${pk}</b></span>${zi != null ? `<span class="pq-zone" style="--zc:${ZONE_COLORS[zi]}" title="Bereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}
-            <span class="pq-sep"></span>
-            ${route.done[id] ? '' : `<button type="button" class="pq-b ok" data-pin-done="${id}" aria-label="Erledigt">${ICON.check}</button><button type="button" class="pq-b skip" data-pin-skip="${id}" aria-label="Überspringen">${ICON.skip}</button>`}<button type="button" class="pq-b list" data-pin-focus="${id}" aria-label="In der Liste zeigen">${ICON.list}</button></div>`,
+            <div class="pq-row"><span class="pq-pk" title="${pk} Paket${pk === 1 ? '' : 'e'}">${ICON.box}<b>${pk}</b></span>${zi != null ? `<span class="pq-zone" style="--zc:${ZONE_COLORS[zi]}" title="Bereich ${ZONE_LETTERS[zi]}">${ZONE_LETTERS[zi]}</span>` : ''}</div>
+            <div class="pq-row">${route.done[id] ? '' : `<button type="button" class="pq-b ok" data-pin-done="${id}" aria-label="Erledigt">${ICON.check}</button><button type="button" class="pq-b skip" data-pin-skip="${id}" aria-label="Überspringen">${ICON.skip}</button>`}<button type="button" class="pq-b list" data-pin-focus="${id}" aria-label="In der Liste zeigen">${ICON.list}</button></div></div>`,
             { offset: { bottom: [0, -64], top: [0, 6], left: [22, -34], right: [-22, -34], 'bottom-left': [0, -64], 'bottom-right': [0, -64], 'top-left': [0, 6], 'top-right': [0, 6] }, className: 'pin-popup pq-popup', anchor: 'bottom', padTop: this.full ? 80 : 10, padBottom: this.full && !wide() ? 200 : 16, maxWidth: 300 })
             .on('popupopen', () => { if (!this.rendering) this.popId = id; }).on('popupclose', () => { if (!this.rendering) this.popId = null; }).addTo(this.layers);
           if (this.popId === id) this.reopen = mk;

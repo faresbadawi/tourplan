@@ -203,4 +203,4 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 ## Version 26
 
 - Hausnummern nicht mehr verdeckt: Die Adresse wird mit einem farbigen Ring direkt auf der Karte markiert – die Hausnummer liegt obendrauf und bleibt lesbar (blau = offen, grau = erledigt, orange = übersprungen). Die Blase mit der Stopp-Nummer schwebt darüber.
-- Fenster beim Antippen einer Blase: nur noch eine schmale Leiste mit Symbolen – Paket-Symbol mit Anzahl, Bereich (wie an der Blase), grüner Haken (erledigt), oranger Überspringen-Knopf, blauer Listen-Knopf.
+- Fenster beim Antippen einer Blase: klein, zwei Zeilen – oben Paket-Symbol mit Anzahl, Bereich (wie an der Blase), darunter grüner Haken (erledigt), oranger Überspringen-Knopf, blauer Listen-Knopf.
