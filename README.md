@@ -188,3 +188,7 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 - Route zweifarbig: vor dir kräftig blau, schon gefahren grau – ab deinem Standort (sonst ab dem letzten erledigten Stopp), wird beim Fahren nachgezogen.
 - Stopps: kleiner Punkt genau auf der Adresse, Blase schräg daneben (ohne Strich) – die Hausnummer bleibt frei. Paketzahl unten rechts an der Blase.
 - Fenster am Punkt wird nicht mehr am Rand abgeschnitten.
+
+## Version 24
+
+- Fehler behoben: Die Karte „Straßen & Hausnummern“ (deutliche Straßennamen, Hausnummern, Gebäude) blieb seit Version 22 leer – eine ungültige Einstellung der Hausnummern-Ebene ließ MapLibre den ganzen Stil ablehnen (auch in „Gebiet auf der Karte wählen“). Zusätzlich abgesichert: Eine fehlerhafte Ebene wird künftig weggelassen statt die ganze Karte zu leeren.

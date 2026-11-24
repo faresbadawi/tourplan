@@ -406,7 +406,7 @@
     boldNames(style, dark);
     style.layers.push({ id: 'tp-housenumber', type: 'symbol', source: 'openmaptiles', 'source-layer': 'housenumber', minzoom: 16,
       layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 16, 12, 19, 17], 'text-padding': 1,
-        'text-allow-overlap': ['>=', ['zoom'], 17.5], 'text-offset': keep3d ? [0, .75] : [0, 0] },     // knapp unter der Stopp-Nadel → bleibt sichtbar
+        'text-allow-overlap': ['step', ['zoom'], false, 17.5, true], 'text-offset': keep3d ? [0, .75] : [0, 0] },     // knapp unter der Stopp-Nadel → bleibt sichtbar
       paint: { 'text-color': dark ? '#FFFFFF' : '#1F2937', 'text-halo-color': dark ? '#0B1220' : '#FFFFFF', 'text-halo-width': 2 } });
     return style;
   }
@@ -547,7 +547,14 @@
       this.map.gl.on('pitchend', () => this.sync3d()); this.map.gl.on('rotateend', () => this.sync3d());
       this.map.gl.on('click', () => this.map.closePopup());
       this.tileErr = 0;
-      this.map.gl.on('error', e => {          // Kacheln dieses Stils lassen sich nicht laden → einmal Bescheid geben
+      this.map.gl.on('error', e => {
+        // Eine ungültige Ebene darf nie die ganze Karte leer lassen → diese Ebene weglassen und Stil neu setzen
+        const m = e && e.error && /^layers\[(\d+)\]/.exec(e.error.message || '');
+        if (m && this.lastStyle && (this.styleFix = (this.styleFix || 0) + 1) < 5) {
+          console.warn('Kartenstil: Ebene entfernt –', e.error.message);
+          this.lastStyle.layers.splice(+m[1], 1); this.map.gl.setStyle(this.lastStyle, { diff: false }); return;
+        }
+        // Kacheln dieses Stils lassen sich nicht laden → einmal Bescheid geben
         if (!e || !e.sourceId || e.sourceId !== 'base') return;
         if (++this.tileErr === 12) toast('Dieser Kartenstil lädt gerade nicht – über den Ebenen-Knopf einen anderen wählen', 4000);
       });
@@ -569,7 +576,7 @@
       let style = st.vector ? await vecStyle(dark, true) : rasterStyle(st, dark);
       if (token !== this.styleToken) return;
       if (!style) { toast('Karte gerade nicht erreichbar – Kartenstil „Deutschland“ wird genutzt', 3500); style = rasterStyle(MAP_STYLES.de, dark); }
-      this.tileErr = 0;
+      this.tileErr = 0; this.styleFix = 0; this.lastStyle = style;
       this.map.gl.setStyle(style, { diff: false });
     },
     cycleStyle() {
