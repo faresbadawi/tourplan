@@ -2465,8 +2465,19 @@
         <button class="dock-btn ok" data-done="${s.id}" aria-label="Erledigt">${ICON.check}<span>Erledigt</span></button>` : `<button class="dock-btn ok" data-finish aria-label="Tour beenden">${ICON.flag}<span>Beenden</span></button>`}
       ${cur !== -1 || route.roundtrip ? `<a class="dock-btn primary" href="${navUrl(s)}" target="_blank" rel="noopener" aria-label="Navigieren">${ICON.nav}<span>Los</span></a>` : ''}</div>`;
     bar.hidden = false;
+    fitStreet();
     $('#mb-info').onclick = () => Map_.flyTo(s, 17, .8);
   }
+  /** Straße, Hausnummer und Bereich immer in einer Zeile: Schrift so weit verkleinern, bis alles passt */
+  function fitStreet() {
+    const row = document.querySelector('#map-bar .mb-street'), b = row && row.querySelector('b'); if (!b) return;
+    let size = 22; b.style.fontSize = size + 'px';
+    const over = () => b.scrollWidth > b.clientWidth + 1 || row.scrollWidth > row.clientWidth + 1;
+    while (over() && size > 14) { size -= 1; b.style.fontSize = size + 'px'; }
+    if (over()) b.textContent = b.textContent.replace(/(s|S)traße\b/g, '$1tr.').replace(/(w|W)eg\b/g, '$1eg');   // sehr lang: „Straße“ → „Str.“
+    while (over() && size > 12) { size -= 1; b.style.fontSize = size + 'px'; }
+  }
+  addEventListener('resize', () => { if (Map_.full) fitStreet(); });
   $('#map-depot').onclick = () => $('#top-depot').onclick();
 
   function renderDock() {
@@ -2923,6 +2934,38 @@
     else { toast('Gespeichert'); Pois.key = ''; Pois.refresh(); }
   };
   $('#s-transfer').onclick = shareSetup;
+  /* Sichern & Wiederherstellen: alles Wichtige als JSON-Datei (Kartenkacheln und Straßenverzeichnis lädt die App selbst neu) */
+  const BACKUP_KEYS = ['tp.settings', 'tp.stops', 'tp.route', 'tp.history', 'tp.vphotos'];
+  $('#s-export').onclick = async () => {
+    const data = { app: 'tourplan', version: 1, exported: new Date().toISOString(), data: {} };
+    BACKUP_KEYS.forEach(k => { const v = localStorage.getItem(k); if (v != null) { try { data.data[k] = JSON.parse(v); } catch (_) {} } });
+    const name = `tourplan-sicherung-${new Date().toISOString().slice(0, 10)}.json`;
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    try {
+      const file = new File([blob], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] }) && matchMedia('(pointer:coarse)').matches) { await navigator.share({ files: [file], title: 'Tourplan-Sicherung' }); toast('Sicherung erstellt'); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast(`Gespeichert als ${name} (${history_.length} Touren im Verlauf)`, 3500);
+  };
+  $('#s-import').onclick = () => $('#s-import-file').click();
+  $('#s-import-file').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    let b; try { b = JSON.parse(await f.text()); } catch (_) { return toast('Datei ist keine Tourplan-Sicherung', 3500); }
+    if (!b || b.app !== 'tourplan' || !b.data || !b.data['tp.settings']) return toast('Datei ist keine Tourplan-Sicherung', 3500);
+    const hist = b.data['tp.history'] || [];
+    const hasTour = stops.length > 0;
+    if (!confirm(`Sicherung vom ${new Date(b.exported).toLocaleDateString('de-DE')} laden?\n\n• ${hist.length} Touren kommen in den Verlauf (vorhandene bleiben)\n• Einstellungen, Straßenliste und Gemerktes werden übernommen${hasTour ? '\n• Deine aktuelle Tour bleibt' : '\n• Die gesicherte offene Tour wird geladen'}`)) return;
+    const byId = new Map(history_.map(t => [t.id, t])); hist.forEach(t => { if (t && t.id && !byId.has(t.id)) byId.set(t.id, t); });
+    const merged = [...byId.values()].sort((x, y) => (y.start || 0) - (x.start || 0));
+    save('tp.history', merged);
+    save('tp.settings', Object.assign({}, b.data['tp.settings'], { onboarded: true }));
+    if (!hasTour && b.data['tp.stops']) { save('tp.stops', b.data['tp.stops']); save('tp.route', b.data['tp.route'] || null); }
+    if (b.data['tp.vphotos']) { try { localStorage.setItem('tp.vphotos', JSON.stringify(Object.assign({}, b.data['tp.vphotos'], vPhotos()))); } catch (_) {} }
+    toast('Sicherung geladen – App startet neu', 2000);
+    setTimeout(() => location.reload(), 900);
+  };
   $('#s-region').onclick = () => { closeSettings(); Region.open(); };
   $('#s-ai-test').onclick = async () => {
     const k = $('#s-ai-key').value.trim(), note = $('#s-ai-note');

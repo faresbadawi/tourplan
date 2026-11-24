@@ -192,3 +192,10 @@ Lokal starten: `python3 -m http.server 8931` und http://127.0.0.1:8931 öffnen. 
 ## Version 24
 
 - Fehler behoben: Die Karte „Straßen & Hausnummern“ (deutliche Straßennamen, Hausnummern, Gebäude) blieb seit Version 22 leer – eine ungültige Einstellung der Hausnummern-Ebene ließ MapLibre den ganzen Stil ablehnen (auch in „Gebiet auf der Karte wählen“). Zusätzlich abgesichert: Eine fehlerhafte Ebene wird künftig weggelassen statt die ganze Karte zu leeren.
+
+## Version 25
+
+- Blasen auf der Karte: Paketzahl oben links (weißes Schild), Ladebereich oben rechts (Bereichsfarbe, weißer Rand, weißer Buchstabe); der Bereich in der Leiste unten sieht genauso aus.
+- Leiste unten: Straße, Hausnummer und Bereich immer in einer Zeile – die Schrift wird bei langen Namen kleiner, sehr lange „…straße“ werden zu „…str.“.
+- Überspringen überall in Orange.
+- Einstellungen: „Daten sichern (Export)“ speichert Verlauf, Einstellungen, Straßenliste, Gemerktes, Fahrzeugfotos und die offene Tour als Datei; „Daten wiederherstellen (Import)“ lädt sie wieder (Verlauf wird zusammengeführt, nichts geht verloren).

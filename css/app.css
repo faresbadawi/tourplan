@@ -1390,3 +1390,26 @@ body.map-full .map-wrap.full .maplibregl-ctrl-bottom-left { bottom: calc(196px +
 .gl-mk .pin .ppk { top: auto; left: auto; bottom: -7px; right: -9px; min-width: 16px; height: 16px; font-size: 9.5px; border-radius: 6px; }
 .gl-mk .pin .pz { top: -8px; right: -9px; }
 .gl-mk .pin.current .ppk, .gl-mk .pin.current .pz { transform: none; }
+
+/* Version 25: Blase mit Paketzahl oben links und Bereich oben rechts – gleiche Bereichs-Marke unten in der Leiste */
+.gl-mk .pin .ppk, .gl-mk .pin .pz { position: absolute; top: -10px; bottom: auto; min-width: 19px; height: 19px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 7px; border: 2px solid #fff; display: grid; place-items: center; font: 800 10.5px/1 var(--sans); font-style: normal; box-shadow: 0 1px 4px rgba(0,0,0,.35); transform: none; }
+.gl-mk .pin .ppk { left: -11px; right: auto; background: #fff; color: #0D1728; border-color: #0D1728; }
+.gl-mk .pin .pz { right: -11px; left: auto; background: var(--zc); color: #fff; }
+.gl-mk .pin-side { width: 58px; height: 54px; }
+.gl-mk .pin-side .pin { left: 16px; bottom: 13px; }
+/* Bereich in der Leiste: genau wie am Pin (Bereichsfarbe, weißer Rand, weißer Buchstabe) */
+.map-bar .mb-zone { flex: none; width: auto; min-width: 30px; height: 30px; padding: 0 6px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+  background: var(--zc); border: 2.5px solid #fff; color: #fff; font: 800 16px/1 var(--sans); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+/* Straße, Hausnummer, Bereich: eine Zeile, Schrift passt sich an */
+.map-bar .mb-info { min-width: 0; }
+.map-bar .mb-info .mb-street { flex-wrap: nowrap; overflow: hidden; min-width: 0; }
+.map-bar .mb-info .mb-street b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.map-bar .mb-hn, .map-bar .mb-zone { flex: none; }
+/* Überspringen in Orange */
+:root { --skip: #F57C00; }
+.map-bar .mb-acts .mb-skip { background: var(--skip) !important; border-color: var(--skip) !important; color: #fff !important; }
+.skipbtn { color: var(--skip); border-color: color-mix(in srgb, var(--skip) 60%, transparent); opacity: 1; }
+.tray [data-skip], .pp-act button[data-pin-skip] { background: color-mix(in srgb, var(--skip) 16%, var(--surface)) !important; color: var(--skip) !important; border-color: color-mix(in srgb, var(--skip) 45%, transparent) !important; }
+.map-bar .mb-info .mb-zone { display: grid; place-items: center; overflow: visible; white-space: nowrap; color: #fff; font: 800 16px/1 var(--sans); padding: 0 6px; width: auto; min-width: 30px; height: 30px; }
+.pp-pk .pp-zone { white-space: nowrap; }
